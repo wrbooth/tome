@@ -132,6 +132,35 @@ create index on passages using ivfflat (embedding vector_cosine_ops) with (lists
 create index on passages using gin (to_tsvector('simple', text));
 ```
 
+### Entity and year extraction tables
+
+```sql
+create table passage_entities (
+  passage_id uuid references passages(id) on delete cascade,
+  entity text,
+  ent_type text,            -- PERSON, ORG, GPE, FAC, etc.
+  norm_entity text,
+  primary key (passage_id, entity)
+);
+
+create table passage_years (
+  passage_id uuid references passages(id) on delete cascade,
+  year int,
+  primary key (passage_id, year)
+);
+
+create table places (
+  place_key text primary key,
+  display_name text,
+  country text,
+  region text,
+  founding_year int
+);
+
+create index on passage_entities (entity, ent_type);
+create index on passage_years (year);
+```
+
 ### search_features table optional
 
 ```sql
@@ -154,16 +183,33 @@ create table search_features (
 3. Language detection per block with fasttext or langdetect
 4. Chunking strategy
    * Split by headings then paragraphs
-   * Merge until around one thousand tokens with about fifteen percent overlap across boundaries only if needed
+   * **Max tokens ≈ 1,000** (count words as proxy for tokens at implementation)
+   * **Target range: 800–1,200 tokens**
+   * **15% overlap across page joins only** (not within pages)
+   * **Do not split mid-sentence**; join paragraphs until size limit
+   * Keep `page` as the page of the **first** paragraph in chunk
+   * If chunk spans pages, note in `headings_path` like `{"spans_pages": true}`
    * Keep footnote text linked to its anchor either inline or as a sibling chunk with backlinks
    * Store breadcrumb path Work › Volume › Book › Chapter › Section in headings_path and optionally append a compact form to chunk text for extra signal
 5. Embeddings
+   * **Default provider**: OpenAI text-embedding-3-large
+   * **Local fallback**: `intfloat/e5-base-v2` for offline capability
+   * **Provider selection**: Environment variables with per-task overrides (`EMBEDDINGS_PROVIDER`, `RERANK_PROVIDER`, `LLM_PROVIDER`)
    * Use a multilingual model such as BGE m3 or E5 mistral class and store vectors in pgvector
 6. Lexical index
    * Push passage text plus headings and captions into Meilisearch
-7. Thesaurus
+   * **Index name**: `passages`
+   * **Searchable attributes**: `text`, `headings_path`
+   * **Filterable attributes**: `document_id`, `page`, `years`, `entities_person`, `entities_place`
+   * **Sortable attributes**: `page`
+7. Entity and year extraction
+   * **spaCy NER** for entity extraction (PERSON, ORG, GPE, FAC, etc.)
+   * **Regex patterns** for year extraction
+   * **Place normalization** using gazetteer lookup
+   * Write entities to `passage_entities` and years to `passage_years`
+8. Thesaurus
    * Maintain a light controlled vocabulary for historical spellings and Latinisms to support query expansion
-8. Deduplication
+9. Deduplication
    * MinHash shingles at passage level to collapse near duplicates across scans and editions
 
 All steps are idempotent and recorded in Postgres so failed runs can resume
@@ -172,7 +218,9 @@ All steps are idempotent and recorded in Postgres so failed runs can resume
 
 ### Candidate generation
 
-* Hybrid recall that merges BM25 from Meilisearch and vector similarity from pgvector using reciprocal rank fusion
+* Hybrid recall that merges BM25 from Meilisearch and vector similarity from pgvector using **reciprocal rank fusion (RRF)**
+* **RRF formula**: `score = 1 / (k + rank)` where `k = 60` and ranks start at 1
+* **Process**: Sum RRF scores per `passage_id` from both BM25 and vector lists
 * Optional SPLADE sparse representation later to improve recall for rare terms and spelling variants
 * Fielded filters over author, pub year, language, edition, and a page range filter when useful
 
@@ -180,12 +228,20 @@ All steps are idempotent and recorded in Postgres so failed runs can resume
 
 * HyDE a short synthetic answer to create an auxiliary embedding for recall on vague questions
 * Synonym and spelling expansion from the controlled vocabulary
+* **Query type detection**: "who is/was" vs factoid vs general
+* **Person entity boosting**: For queries matching `who is/was X`, boost passages with PERSON entity = X and definitional patterns (`X was`, `, a `, `, the `)
+* **Place disambiguation**: For queries like `what taverns.*Athens.*first 10 years`:
+  - Disambiguate Athens via `places` table (or prompt if multiple)
+  - Build synonym-expanded query (tavern|inn|public house|alehouse|ordinary|hostelry)
+  - Filter by `years` in [founding, founding+10]
 * Optional multi step decomposition for queries that imply a sequence for example person then location then date
 
 ### Reranking
 
 * Cross encoder reranker applied to the top set of candidates for example top one hundred then keep the best forty
 * Maximal marginal relevance to diversify and avoid near duplicate chunks
+* **Top K retrieval**: Get top K (e.g., 200) from both BM25 and vector search
+* **RRF fusion**: Apply RRF with `k=60` → take top 20 for reranking
 
 ### Context assembly for RAG
 
@@ -355,11 +411,12 @@ with psycopg.connect(dsn) as conn:
 ```python
 from meilisearch import Client as Meili
 import psycopg
+from collections import defaultdict
 
 RRF_K = 60
 
 def rrf(rank):
-    return 1.0  (RRF_K + rank)
+    return 1.0 / (RRF_K + rank)
 
 # get lexical candidates
 def meili_candidates(q, k=200):
@@ -371,14 +428,15 @@ def vector_candidates(q_embed, k=200):
     # return list of (passage_id, rank)
     ...
 
-# fuse
+# fuse with RRF
 scores = defaultdict(float)
-for i, pid in enumerate(meili_ids):
-    scores[pid] += rrf(i)
-for j, pid in enumerate(vector_ids):
-    scores[pid] += rrf(j)
+for i, (pid, _) in enumerate(meili_ids):
+    scores[pid] += rrf(i + 1)  # ranks start at 1
+for j, (pid, _) in enumerate(vector_ids):
+    scores[pid] += rrf(j + 1)  # ranks start at 1
 
 # take top N and rerank with a cross encoder
+top_candidates = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:20]
 ```
 
 ## RAG prompting guardrails
@@ -392,6 +450,70 @@ Example prompt header
 ```
 You are a careful research assistant for historians Answer only from the passages provided Quote exact lines and include page numbers in the form p N If no passage supports the claim say that and list the most relevant passages instead
 ```
+
+## CLI Interface Design
+
+For development, testing, and batch operations, provide command-line scripts:
+
+### 1) `ingest.py`
+- **Inputs**: path(s) to PDF/TXT
+- **Steps**:
+  1. Extract text with page numbers (PyMuPDF for PDF, plain read for TXT)
+  2. **Chunking**: split by paragraphs; merge to 800–1,200 tokens, respect page boundaries; 15% overlap across page joins only
+  3. Write `documents` and `passages` rows
+  4. Run entity + year extraction (spaCy NER + regex for years); write into `passage_entities` and `passage_years`
+  5. Push documents to Meilisearch with `{id, text, page, document_id, headings_path, entities, years}`
+
+### 2) `embed.py`
+- **Inputs**: none (reads unembedded passages from DB in batches)
+- **Embeddings provider**:
+  - Default: OpenAI text-embedding-3-large **or** local `intfloat/e5-base-v2` as fallback
+- Writes normalized vectors to `passages.embedding`
+
+### 3) `search.py`
+- **Inputs**: `--q "query string" [--k 20] [--doc document_id]`
+- **Steps**:
+  1. Detect query type: "who is/was" vs factoid vs general
+  2. Meili BM25: top K (e.g., 200) → `(id, rank)`
+  3. Dense: embed `q` → pgvector ANN top K (e.g., 200) → `(id, rank)`
+  4. **RRF fusion** with `k=60` → take top 20
+  5. Apply query-specific boosting (person entities, place disambiguation, etc.)
+  6. Print table: `rank, score, title, page, snippet`
+
+## Acceptance Testing Framework
+
+### Seed corpus (text-based, public domain)
+- **The Federalist Papers** (Project Gutenberg plain text)
+- **U.S. Constitution** (plain text)
+
+### Gold queries (examples)
+1. "What does Federalist No. 10 argue about factions?"
+2. "Separation of powers in the Federalist"
+3. "Necessary and Proper Clause"
+4. "Who was Publius?" (test person entity + definitional boost)
+5. "What taverns existed in Athens in the first 10 years of its founding?" (test place+year filter and synonyms)
+
+### Success criteria
+- For each query, **top-5 contains a chunk quoting the relevant section**, with the correct page number
+- **≥70% of queries** have gold passage in top-5 results
+
+## Quality Checks and Diagnostics
+
+### Row parity checks
+- Count of Meili docs == count of `passages` rows
+- Validate all passages have corresponding Meilisearch entries
+
+### Chunk quality validation
+- Fail the run if >1% of chunks < 20 words
+- Check for empty or very short chunks
+
+### Embedding coverage
+- `% passages.embedding is not null` ≥ 99%
+- Validate vector dimensions match schema
+
+### Manual spot-check procedures
+- `search.py --q "factions"` prints snippets and page numbers
+- Cross-check against source PDF for accuracy
 
 ## Evaluation plan
 
@@ -433,11 +555,33 @@ You are a careful research assistant for historians Answer only from the passage
 * Hallucinations force citations in every answer and provide a show me tab with the raw passages
 * Many duplicate scans and editions collapse with shingle based dedup and present an edition switcher in the UI
 
+## Quickstart Guide
+
+```bash
+# 0) start services
+docker compose up -d
+
+# 1) create schema
+psql postgresql://codex:codex@localhost:5432/codex -f sql/schema.sql
+
+# 2) ingest a document
+python ingest.py data/federalist.pdf
+
+# 3) embed passages
+python embed.py --provider openai --model text-embedding-3-large --batch 128
+#   or:  python embed.py --provider local --model intfloat/e5-base-v2
+
+# 4) search
+python search.py --q "factions in Federalist No. 10" --k 20
+```
+
 ## Developer workflow
 
 * Pre commit hook for text normalizer and JSONL schema validation
 * Seed script that ingests a small public domain corpus so new developers can test end to end locally
 * Make targets for compose up compose down migrate db and run tests
+* **CLI testing**: Use `ingest.py`, `embed.py`, `search.py` for rapid iteration
+* **Quality gates**: Run acceptance tests before merging
 
 ## Appendix controlled vocabulary example
 
