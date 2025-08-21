@@ -113,7 +113,7 @@ def validate_embedding_dimension(embedding: List[float], expected_dim: int = 102
 @click.command()
 @click.option('--provider', default='openai', type=click.Choice(['openai', 'local']), 
               help='Embedding provider')
-@click.option('--model', default='text-embedding-3-large', 
+@click.option('--model', default='text-embedding-3-small', 
               help='Model name (for OpenAI) or model path (for local)')
 @click.option('--batch-size', default=100, type=int, 
               help='Batch size for processing')

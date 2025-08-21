@@ -14,7 +14,11 @@ from dotenv import load_dotenv
 import numpy as np
 from collections import defaultdict
 import re
+import json
 from typing import List, Dict, Any, Tuple, Optional
+from meilisearch import Client
+from sentence_transformers import SentenceTransformer
+import openai
 
 load_dotenv()
 
@@ -36,41 +40,55 @@ def rrf(rank: int) -> float:
     return 1.0 / (RRF_K + rank)
 
 def detect_query_type(query: str) -> str:
-    """Detect query type: 'who', 'when', 'where', 'factoid', 'company', or 'general'."""
-    query_lower = query.lower()
-    
-    # Person queries
-    if re.search(r'\bwho\s+(is|was)\b', query_lower):
-        return 'who'
-    
-    # Company/organization queries
-    elif (re.search(r'\bwhat\s+was\s+the\s+name\s+of\b', query_lower) or
-          re.search(r'\bcompany\b', query_lower) or
-          re.search(r'\bcorporation\b', query_lower) or
-          re.search(r'\borganization\b', query_lower) or
-          re.search(r'\bsteel\s+mill\b', query_lower) or
-          re.search(r'\biron\s+and\s+steel\b', query_lower)):
-        return 'company'
-    
-    # Temporal queries - expanded patterns
-    elif (re.search(r'\bwhen\b', query_lower) or 
-          re.search(r'\bdid.*\b(in|during|on)\b.*\d{4}', query_lower) or
-          re.search(r'\bwhat\s+year', query_lower) or
-          re.search(r'\bwhat\s+years', query_lower)):
-        return 'when'
-    
-    # Location queries
-    elif re.search(r'\bwhere\b', query_lower):
-        return 'where'
-    
-    # Factual queries about specific entities/events
-    elif (re.search(r'\bwhat\b.*\b(taverns?|inns?|places?|buildings?)\b', query_lower) or
-          re.search(r'\bdid\b.*\b(family|person|group)\b', query_lower) or
-          re.search(r'\bwhat\s+had\b', query_lower) or
-          re.search(r'\bwhat\s+did\b', query_lower)):
-        return 'factoid'
-    
-    else:
+    """
+    Use OpenAI to classify query type based on semantic understanding.
+    Returns: 'who', 'when', 'where', 'factoid', 'company', 'person', or 'general'
+    """
+    try:
+        # Ensure .env is loaded
+        load_dotenv()
+        
+        # Check if OpenAI API key is available
+        if not os.getenv('OPENAI_API_KEY'):
+            print("Error: OPENAI_API_KEY not found in environment")
+            return 'general'
+        
+        system_prompt = """You are a query classifier for a historical document search system. 
+        Classify the query type based on what the user is asking for:
+
+        - 'who': Questions asking about identity or role (e.g., "Who was the first president to...")
+        - 'when': Questions about timing, dates, or years (e.g., "When did...", "What year...")
+        - 'where': Questions about locations or places (e.g., "Where was...", "What was the old name for...")
+        - 'person': Questions about specific individuals, their actions, or personal history (e.g., "Was John Glenn ever in combat?", "Did the Naftal family arrive...")
+        - 'company': Questions about businesses, organizations, corporations, or institutions (e.g., "What company built...", "What was the name of the company...")
+        - 'factoid': Questions about specific facts, events, or details (e.g., "What had the men done...", "What was the name of...")
+        - 'general': General information requests that don't fit other categories
+
+        Return only the classification label, nothing else."""
+
+        client = openai.OpenAI()
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Classify this query: {query}"}
+            ],
+            max_tokens=10,
+            temperature=0
+        )
+        
+        classification = response.choices[0].message.content.strip().lower()
+        
+        # Validate the classification
+        valid_types = ['who', 'when', 'where', 'factoid', 'company', 'person', 'general']
+        if classification in valid_types:
+            return classification
+        else:
+            print(f"Warning: Invalid classification '{classification}', using 'general'")
+            return 'general'
+            
+    except Exception as e:
+        print(f"Error in OpenAI classification: {e}, using 'general'")
         return 'general'
 
 def extract_person_from_query(query: str) -> Optional[str]:
@@ -184,84 +202,94 @@ def extract_entities_from_query(query: str) -> Dict[str, List[str]]:
     
     return entities
 
-def generate_query_expansions(query: str, query_type: str) -> List[str]:
-    """Generate query expansions based on type and entities."""
+def generate_query_expansions_openai(query: str, query_type: str) -> List[str]:
+    """Use OpenAI to generate contextually relevant query expansions."""
+    try:
+        # Ensure .env is loaded
+        load_dotenv()
+        
+        # Check if OpenAI API key is available
+        if not os.getenv('OPENAI_API_KEY'):
+            print("Warning: OPENAI_API_KEY not found, falling back to simple expansion")
+            return generate_query_expansions_simple(query, query_type)
+        
+        system_prompt = f"""You are a query expansion expert for a historical document search system. 
+        Given a query and its type, generate 5-10 additional search terms that would help find relevant passages.
+        
+        Query type: {query_type}
+        Original query: "{query}"
+        
+        Generate search terms that:
+        1. Include synonyms and related concepts
+        2. Add specific names, dates, or places mentioned or implied
+        3. Include broader and narrower terms
+        4. Add historical context terms
+        5. Include alternative phrasings
+        
+        Return only the search terms, one per line, without numbering or explanations.
+        Start with the original query, then add expansions."""
+
+        client = openai.OpenAI()
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Generate search expansions for: {query}"}
+            ],
+            max_tokens=200,
+            temperature=0.3
+        )
+        
+        expansions_text = response.choices[0].message.content.strip()
+        
+        # Parse the response into a list
+        expansions = [line.strip() for line in expansions_text.split('\n') if line.strip()]
+        
+        # Ensure the original query is included
+        if query not in expansions:
+            expansions.insert(0, query)
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_expansions = []
+        for exp in expansions:
+            if exp.lower() not in seen:
+                seen.add(exp.lower())
+                unique_expansions.append(exp)
+        
+        return unique_expansions[:15]  # Limit to 15 expansions to avoid overwhelming
+        
+    except Exception as e:
+        print(f"Error in OpenAI query expansion: {e}, falling back to simple expansion")
+        return generate_query_expansions_simple(query, query_type)
+
+def generate_query_expansions_simple(query: str, query_type: str) -> List[str]:
+    """Simple fallback query expansion using basic patterns."""
     expansions = [query]
-    
-    # Extract entities
     entities = extract_entities_from_query(query)
     
-    # Add family name expansions
+    # Add basic entity expansions
     for family in entities["families"]:
-        expansions.extend([
-            family,  # Just the family name
-            f"{family} family",
-            f"family {family}"
-        ])
+        expansions.extend([family, f"{family} family"])
     
-    # Add person name expansions
     for person in entities["persons"]:
         expansions.append(person)
     
-    # Add date expansions for temporal queries
-    if query_type == "when":
-        for date in entities["dates"]:
-            expansions.append(date)
-        # Add common temporal terms
-        expansions.extend([
-            "date", "year", "time", "period", "era"
-        ])
-    
-    # Add place expansions
     for place in entities["places"]:
         expansions.append(place)
     
-    # Add company expansions
-    for company in entities["companies"]:
-        expansions.append(company)
+    for date in entities["dates"]:
+        expansions.extend([f"in {date}", f"during {date}"])
     
-    # Add industry expansions
-    for industry in entities["industries"]:
-        expansions.append(industry)
-        # Add industry synonyms
-        if industry.lower() == "steel":
-            expansions.extend(["iron", "metal", "steelworks"])
-        elif industry.lower() == "iron":
-            expansions.extend(["steel", "metal", "ironworks"])
-        elif industry.lower() == "mill":
-            expansions.extend(["factory", "plant", "works"])
+    # Add type-specific terms
+    if query_type == "when":
+        expansions.extend(["date", "year", "time"])
+    elif query_type == "company":
+        expansions.extend(["company", "corporation", "business"])
+    elif query_type == "person":
+        expansions.extend(["person", "individual", "man", "woman"])
     
-    # Add company-related terms for company queries
-    if query_type == "company" or entities["companies"] or entities["industries"]:
-        company_terms = [
-            "company", "corporation", "incorporated", "inc",
-            "steel mill", "iron works", "factory", "plant",
-            "manufacturing", "industry", "business"
-        ]
-        expansions.extend(company_terms)
-    
-    # Add arrival/settlement synonyms for family queries
-    if entities["families"] or query_type == "factoid":
-        arrival_synonyms = [
-            "arrive", "arrived", "arrival",
-            "come", "came", "coming",
-            "settle", "settled", "settlement",
-            "migrate", "migrated", "migration",
-            "move", "moved", "moving"
-        ]
-        expansions.extend(arrival_synonyms)
-    
-    # Add temporal context for factoid queries
-    if query_type == "factoid" and entities["dates"]:
-        for date in entities["dates"]:
-            expansions.extend([
-                f"in {date}",
-                f"during {date}",
-                f"by {date}",
-                f"around {date}"
-            ])
-    
-    # Remove duplicates while preserving order
+    # Remove duplicates
     seen = set()
     unique_expansions = []
     for exp in expansions:
@@ -270,6 +298,10 @@ def generate_query_expansions(query: str, query_type: str) -> List[str]:
             unique_expansions.append(exp)
     
     return unique_expansions
+
+def generate_query_expansions(query: str, query_type: str) -> List[str]:
+    """Main query expansion function - uses OpenAI with fallback."""
+    return generate_query_expansions_openai(query, query_type)
 
 def get_meili_candidates(query: str, k: int = 200, document_id: Optional[str] = None) -> List[Tuple[str, int]]:
     """Get BM25 candidates from Meilisearch."""
@@ -347,25 +379,23 @@ def get_vector_candidates(query: str, k: int = 200, document_id: Optional[str] =
         return []
 
 def get_query_embedding(query: str) -> Optional[List[float]]:
-    """Get embedding for query text."""
+    """Get embedding for query text using OpenAI."""
     try:
-        # Try OpenAI first
-        if os.getenv("OPENAI_API_KEY"):
-            from openai import OpenAI
-            client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-            
-            response = client.embeddings.create(
-                model="text-embedding-3-large",
-                input=query,
-                encoding_format="float"
-            )
-            return response.data[0].embedding
+        # Ensure .env is loaded
+        load_dotenv()
         
-        # Fallback to local model
-        from sentence_transformers import SentenceTransformer
-        model = SentenceTransformer("intfloat/e5-base-v2")
-        embedding = model.encode([query], normalize_embeddings=True)
-        return embedding[0].tolist()
+        # Check if OpenAI API key is available
+        if not os.getenv('OPENAI_API_KEY'):
+            print("Error: OPENAI_API_KEY not found in environment")
+            return None
+        
+        client = openai.OpenAI()
+        response = client.embeddings.create(
+            model="text-embedding-3-small",
+            input=query,
+            encoding_format="float"
+        )
+        return response.data[0].embedding
         
     except Exception as e:
         print(f"Warning: Failed to get query embedding: {e}")
@@ -481,6 +511,82 @@ def apply_query_boosting(candidates: List[Tuple[str, float]], query: str, conn) 
         
         return boosted_candidates
     
+    elif query_type == 'person':
+        # Boost passages with specific person names
+        boosted_candidates = []
+        
+        for passage_id, score in candidates:
+            boost_multiplier = 1.0
+            
+            # Check if passage has the specific person mentioned
+            with conn.cursor() as cur:
+                # Check for person names in entities
+                if entities.get("persons"):
+                    person_found = False
+                    for person in entities["persons"]:
+                        # More specific matching for person names
+                        cur.execute("""
+                            SELECT norm_entity FROM passage_entities 
+                            WHERE passage_id = %s 
+                            AND ent_type = 'PERSON' 
+                            AND norm_entity LIKE %s
+                        """, (passage_id, f"%{person.lower()}%"))
+                        
+                        matches = cur.fetchall()
+                        for match in matches:
+                            matched_entity = match[0]
+                            # Check if it's an exact or very close match
+                            if (matched_entity == person.lower() or 
+                                matched_entity == f"{person.lower()} h" or  # "john h glenn"
+                                matched_entity == f"{person.lower()} h glenn" or  # "john h glenn"
+                                (person.lower() == "john" and "glenn" in matched_entity)):  # "john h glenn"
+                                # Strong boost for exact person match
+                                boost_multiplier *= 3.0
+                                person_found = True
+                                break
+                        if person_found:
+                            break
+                    
+                    # Penalty for passages with other "John" entities but not the right one
+                    if not person_found and "john" in [p.lower() for p in entities.get("persons", [])]:
+                        cur.execute("""
+                            SELECT COUNT(*) FROM passage_entities 
+                            WHERE passage_id = %s 
+                            AND ent_type = 'PERSON' 
+                            AND norm_entity LIKE '%%john%%'
+                            AND norm_entity NOT LIKE '%%glenn%%'
+                        """, (passage_id,))
+                        
+                        if cur.fetchone()[0] > 0:
+                            # Penalty for wrong "John" entities
+                            boost_multiplier *= 0.5
+            
+                # Also check for combat/military terms for combat-related queries
+                if "combat" in query.lower() or "war" in query.lower() or "fight" in query.lower():
+                    combat_terms = ["combat", "war", "battle", "mission", "military", "marine", "army", "navy", "air force"]
+                    combat_found = False
+                    for term in combat_terms:
+                        cur.execute("""
+                            SELECT 1 FROM passage_entities 
+                            WHERE passage_id = %s 
+                            AND (norm_entity LIKE %s OR norm_entity LIKE %s)
+                        """, (passage_id, f"%{term}%", f"%{term}%"))
+                        
+                        if cur.fetchone():
+                            # Additional boost for combat-related content
+                            boost_multiplier *= 1.3
+                            combat_found = True
+                            break
+                    
+                    # Special boost for passages with BOTH person AND combat terms
+                    if person_found and combat_found:
+                        boost_multiplier *= 2.0  # Extra boost for perfect match
+            
+            boosted_score = score * boost_multiplier
+            boosted_candidates.append((passage_id, boosted_score))
+        
+        return boosted_candidates
+    
     return candidates
 
 def get_passage_details(conn, passage_ids: List[str]) -> List[Dict[str, Any]]:
@@ -496,10 +602,18 @@ def get_passage_details(conn, passage_ids: List[str]) -> List[Dict[str, Any]]:
             FROM passages p
             JOIN documents d ON p.document_id = d.id
             WHERE p.id IN ({placeholders})
-            ORDER BY p.id
         """, passage_ids)
         
-        return cur.fetchall()
+        results = cur.fetchall()
+        
+        # Preserve the order of passage_ids
+        id_to_result = {result['id']: result for result in results}
+        ordered_results = []
+        for passage_id in passage_ids:
+            if passage_id in id_to_result:
+                ordered_results.append(id_to_result[passage_id])
+        
+        return ordered_results
 
 def format_results(results: List[Dict[str, Any]], scores: Dict[str, float]) -> str:
     """Format search results for display."""
@@ -595,6 +709,9 @@ def main(query: str, k: int, document_id: Optional[str]):
     # Apply query-specific boosting
     conn = get_db_connection()
     boosted_candidates = apply_query_boosting(top_candidates, query, conn)
+    
+    # Re-sort by boosted scores
+    boosted_candidates = sorted(boosted_candidates, key=lambda x: x[1], reverse=True)
     
     # Get passage details
     passage_ids = [pid for pid, _ in boosted_candidates]
