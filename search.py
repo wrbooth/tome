@@ -758,7 +758,6 @@ def apply_query_boosting(candidates: List[Tuple[str, float]], query: str, conn) 
             with conn.cursor() as cur:
                 # Initialize variables
                 person_found = False
-                combat_found = False
                 
                 # Check for person names in entities
                 if entities.get("persons"):
@@ -771,55 +770,13 @@ def apply_query_boosting(candidates: List[Tuple[str, float]], query: str, conn) 
                             AND norm_entity LIKE %s
                         """, (passage_id, f"%{person.lower()}%"))
                         
-                        matches = cur.fetchall()
-                        for match in matches:
-                            matched_entity = match[0]
-                            # Check if it's an exact or very close match
-                            if (matched_entity == person.lower() or 
-                                matched_entity == f"{person.lower()} h" or  # "john h glenn"
-                                matched_entity == f"{person.lower()} h glenn" or  # "john h glenn"
-                                (person.lower() == "john" and "glenn" in matched_entity)):  # "john h glenn"
-                                # Strong boost for exact person match
-                                boost_multiplier *= 3.0
-                                person_found = True
-                                break
-                        if person_found:
-                            break
-                
-                # Penalty for passages with other "John" entities but not the right one
-                if not person_found and "john" in [p.lower() for p in entities.get("persons", [])]:
-                    cur.execute("""
-                        SELECT COUNT(*) FROM passage_entities 
-                        WHERE passage_id = %s 
-                        AND ent_type = 'PERSON' 
-                        AND norm_entity LIKE '%%john%%'
-                        AND norm_entity NOT LIKE '%%glenn%%'
-                    """, (passage_id,))
-                    
-                    if cur.fetchone()[0] > 0:
-                        # Penalty for wrong "John" entities
-                        boost_multiplier *= 0.5
-            
-            # Also check for combat/military terms for combat-related queries
-            if "combat" in query.lower() or "war" in query.lower() or "fight" in query.lower():
-                combat_terms = ["combat", "war", "battle", "mission", "military", "marine", "army", "navy", "air force"]
-                for term in combat_terms:
-                    with conn.cursor() as cur:
-                        cur.execute("""
-                            SELECT 1 FROM passage_entities 
-                            WHERE passage_id = %s 
-                            AND (norm_entity LIKE %s OR norm_entity LIKE %s)
-                        """, (passage_id, f"%{term}%", f"%{term}%"))
-                        
                         if cur.fetchone():
-                            # Additional boost for combat-related content
-                            boost_multiplier *= 1.3
-                            combat_found = True
+                            # Boost for person entity match
+                            boost_multiplier *= 2.0
+                            person_found = True
                             break
-                
-                # Special boost for passages with BOTH person AND combat terms
-                if person_found and combat_found:
-                    boost_multiplier *= 2.0  # Extra boost for perfect match
+            
+            # For person queries, we've already applied the boost above
             
             boosted_score = score * boost_multiplier
             boosted_candidates.append((passage_id, boosted_score))
