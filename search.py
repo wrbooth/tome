@@ -36,11 +36,15 @@ def rrf(rank: int) -> float:
     return 1.0 / (RRF_K + rank)
 
 def detect_query_type(query: str) -> str:
-    """Detect query type: 'who', 'factoid', or 'general'."""
+    """Detect query type: 'who', 'when', 'where', 'factoid', or 'general'."""
     query_lower = query.lower()
     
     if re.search(r'\bwho\s+(is|was)\b', query_lower):
         return 'who'
+    elif re.search(r'\bwhen\b', query_lower):
+        return 'when'
+    elif re.search(r'\bwhere\b', query_lower):
+        return 'where'
     elif re.search(r'\bwhat\b.*\b(taverns?|inns?|places?|buildings?)\b', query_lower):
         return 'factoid'
     else:
@@ -53,14 +57,74 @@ def extract_person_from_query(query: str) -> Optional[str]:
         return match.group(2).strip()
     return None
 
+def extract_entities_from_query(query: str) -> Dict[str, List[str]]:
+    """Extract entities from query for expansion."""
+    entities = {
+        "persons": [],
+        "places": [],
+        "events": [],
+        "dates": []
+    }
+    
+    # Extract person names (simple heuristic)
+    person_patterns = [
+        r'\b([A-Z][a-z]+)\s+([A-Z][a-z]+)\b',  # First Last
+        r'\b([A-Z][a-z]+)\b'  # Single capitalized word
+    ]
+    
+    for pattern in person_patterns:
+        matches = re.findall(pattern, query)
+        for match in matches:
+            if isinstance(match, tuple):
+                entities["persons"].append(" ".join(match))
+            else:
+                entities["persons"].append(match)
+    
+    # Extract dates/years
+    year_pattern = r'\b(17|18|19|20)\d{2}\b'
+    entities["dates"] = re.findall(year_pattern, query)
+    
+    # Extract places (simple heuristic)
+    place_patterns = [
+        r'\b([A-Z][a-z]+)\s+(County|State|Town|City|Village)\b',
+        r'\b([A-Z][a-z]+)\s+([A-Z][a-z]+)\b'  # Potential place names
+    ]
+    
+    for pattern in place_patterns:
+        matches = re.findall(pattern, query)
+        for match in matches:
+            if isinstance(match, tuple):
+                entities["places"].append(" ".join(match))
+            else:
+                entities["places"].append(match)
+    
+    return entities
+
+def generate_query_expansions(query: str, query_type: str) -> List[str]:
+    """Generate query expansions based on type and entities."""
+    expansions = [query]
+    
+    # Extract entities
+    entities = extract_entities_from_query(query)
+    
+    # Add date expansions for temporal queries
+    if query_type == "when":
+        for date in entities["dates"]:
+            expansions.append(date)
+        # Add common temporal terms
+        expansions.extend([
+            "date", "year", "time", "period", "era"
+        ])
+    
+    return expansions
+
 def get_meili_candidates(query: str, k: int = 200, document_id: Optional[str] = None) -> List[Tuple[str, int]]:
     """Get BM25 candidates from Meilisearch."""
     try:
         from meilisearch import Client
         
         client = Client(
-            os.getenv("MEILI_URL", "http://localhost:7700"),
-            os.getenv("MEILI_MASTER_KEY", "")
+            os.getenv("MEILI_URL", "http://localhost:7700")
         )
         
         index = client.index("passages")
@@ -103,7 +167,7 @@ def get_vector_candidates(query: str, k: int = 200, document_id: Optional[str] =
         
         # Build query
         sql = """
-            SELECT id, 1 - (embedding <=> %s) as similarity
+            SELECT id, 1 - (embedding <=> %s::vector) as similarity
             FROM passages 
             WHERE embedding IS NOT NULL
         """
@@ -113,7 +177,7 @@ def get_vector_candidates(query: str, k: int = 200, document_id: Optional[str] =
             sql += " AND document_id = %s"
             params.append(document_id)
         
-        sql += " ORDER BY embedding <=> %s LIMIT %s"
+        sql += " ORDER BY embedding <=> %s::vector LIMIT %s"
         params.extend([query_embedding, k])
         
         with conn.cursor() as cur:
@@ -183,6 +247,28 @@ def apply_query_boosting(candidates: List[Tuple[str, float]], query: str, conn) 
             
             return boosted_candidates
     
+    elif query_type == 'when':
+        # Boost passages with dates/years for temporal queries
+        boosted_candidates = []
+        
+        for passage_id, score in candidates:
+            # Check if passage has years mentioned
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT COUNT(*) FROM passage_years 
+                    WHERE passage_id = %s
+                """, (passage_id,))
+                
+                year_count = cur.fetchone()[0]
+                if year_count > 0:
+                    # Boost score for passages with dates
+                    boosted_score = score * 1.3
+                    boosted_candidates.append((passage_id, boosted_score))
+                else:
+                    boosted_candidates.append((passage_id, score))
+        
+        return boosted_candidates
+    
     return candidates
 
 def get_passage_details(conn, passage_ids: List[str]) -> List[Dict[str, Any]]:
@@ -221,6 +307,16 @@ def format_results(results: List[Dict[str, Any]], scores: Dict[str, float]) -> s
     
     return '\n'.join(output)
 
+def generate_answer(query: str, query_type: str, results: List[Dict[str, Any]]) -> str:
+    """Generate a simple answer summary from search results."""
+    if not results:
+        return "I couldn't find any relevant information to answer your question."
+    
+    # For now, just return the top result as a snippet
+    # This will be replaced by LLM processing later
+    top_result = results[0]
+    return f"Top result: {top_result['text'][:300]}... (Source: p. {top_result['page']})"
+
 @click.command()
 @click.option('--q', 'query', required=True, help='Search query')
 @click.option('--k', default=20, type=int, help='Number of results to return')
@@ -229,9 +325,17 @@ def main(query: str, k: int, document_id: Optional[str]):
     """Search passages using hybrid retrieval with RRF fusion."""
     
     print(f"Searching for: {query}")
-    print(f"Query type: {detect_query_type(query)}")
     
-    # Get candidates from both sources
+    # Analyze query
+    query_type = detect_query_type(query)
+    print(f"Query type: {query_type}")
+    
+    # Generate query expansions
+    expansions = generate_query_expansions(query, query_type)
+    if len(expansions) > 1:
+        print(f"Query expansions: {expansions[1:]}")  # Skip the original query
+    
+    # Get candidates from both sources using original query
     print("Getting BM25 candidates...")
     meili_candidates = get_meili_candidates(query, k=200, document_id=document_id)
     print(f"Found {len(meili_candidates)} BM25 candidates")
@@ -271,6 +375,12 @@ def main(query: str, k: int, document_id: Optional[str]):
     
     # Create score mapping
     score_map = {pid: score for pid, score in boosted_candidates}
+    
+    # Generate answer
+    answer = generate_answer(query, query_type, passage_details)
+    print(f"\nAnswer:")
+    print("=" * 80)
+    print(answer)
     
     # Format and display results
     print(f"\nTop {len(passage_details)} results:")

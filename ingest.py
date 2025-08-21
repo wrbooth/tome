@@ -73,10 +73,12 @@ def extract_text_from_txt(file_path: str) -> List[Dict[str, Any]]:
     
     return pages
 
-def chunk_text(pages: List[Dict[str, Any]], max_tokens: int = 1000, overlap: float = 0.15) -> List[Dict[str, Any]]:
-    """Chunk text into passages of approximately max_tokens."""
+def chunk_text(pages: List[Dict[str, Any]], max_tokens: int = 500, overlap: float = 0.1) -> List[Dict[str, Any]]:
+    """Chunk text into passages of approximately max_tokens, allowing cross-page chunks."""
     chunks = []
     
+    # Collect all paragraphs with their page numbers
+    all_paragraphs = []
     for page_data in pages:
         page_num = page_data["page"]
         text = page_data["text"]
@@ -84,53 +86,57 @@ def chunk_text(pages: List[Dict[str, Any]], max_tokens: int = 1000, overlap: flo
         # Split by paragraphs
         paragraphs = [p.strip() for p in text.split('\n') if p.strip()]
         
-        current_chunk = []
-        current_tokens = 0
-        
         for paragraph in paragraphs:
-            # Rough token estimation (words * 1.3)
-            para_tokens = len(paragraph.split()) * 1.3
-            
-            if current_tokens + para_tokens > max_tokens and current_chunk:
-                # Save current chunk
-                chunk_text = ' '.join(current_chunk)
-                chunks.append({
-                    "page": page_num,
-                    "text": chunk_text,
-                    "char_start": 0,  # TODO: Calculate actual positions
-                    "char_end": len(chunk_text),
-                    "headings_path": []
-                })
-                
-                # Start new chunk with overlap
-                overlap_tokens = int(current_tokens * overlap)
-                overlap_chunk = []
-                overlap_count = 0
-                
-                for para in reversed(current_chunk):
-                    para_tokens_est = len(para.split()) * 1.3
-                    if overlap_count + para_tokens_est <= overlap_tokens:
-                        overlap_chunk.insert(0, para)
-                        overlap_count += para_tokens_est
-                    else:
-                        break
-                
-                current_chunk = overlap_chunk
-                current_tokens = overlap_count
-            
-            current_chunk.append(paragraph)
-            current_tokens += para_tokens
-        
-        # Add final chunk from this page
-        if current_chunk:
-            chunk_text = ' '.join(current_chunk)
-            chunks.append({
+            all_paragraphs.append({
                 "page": page_num,
+                "text": paragraph,
+                "tokens": len(paragraph.split()) * 1.3  # Rough token estimation
+            })
+    
+    # Create chunks across pages
+    current_chunk = []
+    current_tokens = 0
+    chunk_start_page = None
+    
+    for i, para in enumerate(all_paragraphs):
+        # If adding this paragraph would exceed max_tokens, save current chunk
+        if current_tokens + para["tokens"] > max_tokens and current_chunk:
+            # Save current chunk
+            chunk_text = ' '.join([p["text"] for p in current_chunk])
+            chunks.append({
+                "page": chunk_start_page,
                 "text": chunk_text,
                 "char_start": 0,
                 "char_end": len(chunk_text),
                 "headings_path": []
             })
+            
+            # Start new chunk with minimal overlap (just the last paragraph)
+            if len(current_chunk) > 0:
+                current_chunk = [current_chunk[-1]]
+                current_tokens = current_chunk[0]["tokens"]
+                chunk_start_page = current_chunk[0]["page"]
+            else:
+                current_chunk = []
+                current_tokens = 0
+                chunk_start_page = para["page"]
+        
+        if not current_chunk:
+            chunk_start_page = para["page"]
+        
+        current_chunk.append(para)
+        current_tokens += para["tokens"]
+    
+    # Add final chunk
+    if current_chunk:
+        chunk_text = ' '.join([p["text"] for p in current_chunk])
+        chunks.append({
+            "page": chunk_start_page,
+            "text": chunk_text,
+            "char_start": 0,
+            "char_end": len(chunk_text),
+            "headings_path": []
+        })
     
     return chunks
 
@@ -140,8 +146,8 @@ def extract_entities_and_years(text: str) -> Tuple[List[Dict[str, str]], List[in
     years = []
     
     # Extract years using regex
-    year_pattern = r'\b(14||15|16|17|18|19|20)\d{2}\b'
-    years = [int(year) for year in re.findall(year_pattern, text)]
+    year_pattern = r'\b(14|15|16|17|18|19|20)\d{2}\b'
+    years = [int(year) for year in re.findall(year_pattern, text) if year.strip()]
     
     # Extract entities using spaCy
     if nlp:
@@ -185,7 +191,7 @@ def store_passages(conn, doc_id: str, chunks: List[Dict[str, Any]]) -> List[str]
                 doc_id,
                 chunk["page"],
                 chunk["text"],
-                json.dumps(chunk["headings_path"]),
+                chunk["headings_path"],  # Pass the list directly
                 chunk["char_start"],
                 chunk["char_end"]
             ))
@@ -216,8 +222,7 @@ def index_in_meilisearch(passages: List[Dict[str, Any]], passage_ids: List[str])
         from meilisearch import Client
         
         client = Client(
-            os.getenv("MEILI_URL", "http://localhost:7700"),
-            os.getenv("MEILI_MASTER_KEY", "")
+            os.getenv("MEILI_URL", "http://localhost:7700")
         )
         
         # Prepare documents for indexing
