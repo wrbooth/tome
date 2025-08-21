@@ -157,6 +157,17 @@ def extract_entities_from_query(query: str) -> Dict[str, List[str]]:
     year_pattern = r'\b(17|18|19|20)\d{2}\b'
     entities["dates"] = re.findall(year_pattern, query)
     
+    # Also extract century references and convert to specific years
+    century_patterns = [
+        (r'\b1700s\b', ['1700', '1701', '1702', '1703', '1704', '1705', '1706', '1707', '1708', '1709']),
+        (r'\b1800s\b', ['1800', '1801', '1802', '1803', '1804', '1805', '1806', '1807', '1808', '1809']),
+        (r'\b1900s\b', ['1900', '1901', '1902', '1903', '1904', '1905', '1906', '1907', '1908', '1909']),
+    ]
+    
+    for pattern, years in century_patterns:
+        if re.search(pattern, query):
+            entities["dates"].extend(years)
+    
     # Extract places (simple heuristic)
     place_patterns = [
         r'\b([A-Z][a-z]+)\s+(County|State|Town|City|Village)\b',
@@ -361,8 +372,10 @@ def get_query_embedding(query: str) -> Optional[List[float]]:
         return None
 
 def apply_query_boosting(candidates: List[Tuple[str, float]], query: str, conn) -> List[Tuple[str, float]]:
-    """Apply query-specific boosting."""
+    """Apply query-specific boosting to candidates."""
+    
     query_type = detect_query_type(query)
+    entities = extract_entities_from_query(query)
     
     if query_type == 'who':
         person = extract_person_from_query(query)
@@ -394,20 +407,37 @@ def apply_query_boosting(candidates: List[Tuple[str, float]], query: str, conn) 
         boosted_candidates = []
         
         for passage_id, score in candidates:
+            boost_multiplier = 1.0
+            
             # Check if passage has years mentioned
             with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT COUNT(*) FROM passage_years 
-                    WHERE passage_id = %s
-                """, (passage_id,))
+                # Check for specific years mentioned in the query
+                if entities.get("dates"):
+                    for date in entities["dates"]:
+                        cur.execute("""
+                            SELECT COUNT(*) FROM passage_years 
+                            WHERE passage_id = %s AND year = %s
+                        """, (passage_id, int(date)))
+                        
+                        if cur.fetchone()[0] > 0:
+                            # Strong boost for exact year match
+                            boost_multiplier *= 2.0
+                            break
                 
-                year_count = cur.fetchone()[0]
-                if year_count > 0:
-                    # Boost score for passages with dates
-                    boosted_score = score * 1.3
-                    boosted_candidates.append((passage_id, boosted_score))
-                else:
-                    boosted_candidates.append((passage_id, score))
+                # Also check for any years in the passage (weaker boost)
+                if boost_multiplier == 1.0:  # Only if no exact match found
+                    cur.execute("""
+                        SELECT COUNT(*) FROM passage_years 
+                        WHERE passage_id = %s
+                    """, (passage_id,))
+                    
+                    year_count = cur.fetchone()[0]
+                    if year_count > 0:
+                        # Moderate boost for passages with any dates
+                        boost_multiplier *= 1.3
+            
+            boosted_score = score * boost_multiplier
+            boosted_candidates.append((passage_id, boosted_score))
         
         return boosted_candidates
     

@@ -146,7 +146,7 @@ def extract_entities_and_years(text: str) -> Tuple[List[Dict[str, str]], List[in
     years = []
     
     # Extract years using regex
-    year_pattern = r'\b(14|15|16|17|18|19|20)\d{2}\b'
+    year_pattern = r'\b(1[4-9]\d{2}|20\d{2})\b'
     years = [int(year) for year in re.findall(year_pattern, text) if year.strip()]
     
     # Extract entities using spaCy
