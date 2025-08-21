@@ -169,7 +169,9 @@ def extract_entities_from_query(query: str) -> Dict[str, List[str]]:
         - industries: Industry types or sectors (e.g., "steel", "coal", "manufacturing")
         - settlement_terms: Terms related to settlement, immigration, arrival (e.g., "settlers", "arrived", "founded")
         
-        IMPORTANT: For temporal queries asking "what years", "when", or "what time", include relevant historical periods or timeframes that might be relevant for the search. For example, if asking about early settlers in the 1800s, include "1800s" or "19th century" in dates. If the query asks about "early settlers" or "first settlers", this typically refers to the early 1800s (1800-1850) or 19th century.
+        IMPORTANT: 
+        1. For temporal queries asking "what years", "when", or "what time", include relevant historical periods or timeframes that might be relevant for the search. For example, if asking about early settlers in the 1800s, include "1800s" or "19th century" in dates. If the query asks about "early settlers" or "first settlers", this typically refers to the early 1800s (1800-1850) or 19th century.
+        2. For "who" questions about roles or positions (e.g., "first president", "first sitting president"), include relevant historical figures who might fit that description. For example, if asking about "first sitting president", consider including "James Monroe", "Andrew Jackson", "George Washington" as these were early presidents.
         
         Return a JSON object with these categories as keys and arrays of extracted entities as values.
         Example:
@@ -362,6 +364,9 @@ def generate_query_expansions_openai(query: str, query_type: str) -> List[str]:
         5. Include alternative phrasings
         6. ALWAYS include key entity combinations (e.g., "Guernsey settlers" for queries about Guernsey settlers)
         7. For temporal queries about settlers/immigration, include terms like "settlers", "immigration", "arrival", "founding"
+        8. For "who" questions about roles or positions, focus on the role/position terms and avoid geographic confusion (e.g., for "president visiting Cambridge", focus on "president", "visit", "Cambridge" not "Cambridge University")
+        9. Be specific to the context - if asking about Cambridge, Ohio, avoid terms that would match Cambridge, Massachusetts or Cambridge University
+        10. For questions about "first" or "first sitting" president, include terms like "early presidents", "first president", "presidential visits", "president travel"
         
         Return only the search terms, one per line, without numbering or explanations.
         Start with the original query, then add expansions."""
@@ -558,13 +563,15 @@ def apply_query_boosting(candidates: List[Tuple[str, float]], query: str, conn) 
     
     if query_type == 'who':
         person = extract_person_from_query(query)
-        if person:
-            # Boost passages with PERSON entity matching the query
-            boosted_candidates = []
+        boosted_candidates = []
+        
+        for passage_id, score in candidates:
+            boost_multiplier = 1.0
             
-            for passage_id, score in candidates:
-                # Check if passage has matching person entity
-                with conn.cursor() as cur:
+            # Check if passage has matching person entity
+            with conn.cursor() as cur:
+                # If we have a specific person from the query
+                if person:
                     cur.execute("""
                         SELECT 1 FROM passage_entities 
                         WHERE passage_id = %s 
@@ -574,12 +581,26 @@ def apply_query_boosting(candidates: List[Tuple[str, float]], query: str, conn) 
                     
                     if cur.fetchone():
                         # Boost score for matching person
-                        boosted_score = score * 1.5
-                        boosted_candidates.append((passage_id, boosted_score))
-                    else:
-                        boosted_candidates.append((passage_id, score))
+                        boost_multiplier *= 1.5
+                
+                                # For role-based "who" questions, boost passages with PERSON entities
+                # This is more generic and scalable than hardcoding specific names
+                if query_type == 'who':
+                    cur.execute("""
+                        SELECT COUNT(*) FROM passage_entities 
+                        WHERE passage_id = %s 
+                        AND ent_type = 'PERSON'
+                    """, (passage_id,))
+                    
+                    person_count = cur.fetchone()[0]
+                    if person_count > 0:
+                        # Boost for passages with person entities (more people = more relevant for "who" questions)
+                        boost_multiplier *= (1.0 + (person_count * 0.2))  # 20% boost per person entity
             
-            return boosted_candidates
+            boosted_score = score * boost_multiplier
+            boosted_candidates.append((passage_id, boosted_score))
+        
+        return boosted_candidates
     
     elif query_type == 'when':
         # Boost passages with dates/years for temporal queries
