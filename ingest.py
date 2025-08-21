@@ -136,6 +136,14 @@ def extract_entities_and_years(text: str) -> Tuple[List[Dict[str, str]], List[in
     year_pattern = r'\b(1[4-9]\d{2}|20\d{2})\b'
     years = [int(year) for year in re.findall(year_pattern, text) if year.strip()]
     
+    # Also extract decade references like "1940s", "1950s", etc.
+    decade_pattern = r'\b(1[4-9]\d{2}s|20\d{2}s)\b'
+    decade_matches = re.findall(decade_pattern, text)
+    for decade in decade_matches:
+        # Convert "1940s" to 1940, "1950s" to 1950, etc.
+        base_year = int(decade[:-1])  # Remove 's' and convert to int
+        years.append(base_year)
+    
     # Extract entities using spaCy
     if nlp:
         doc = nlp(text)
