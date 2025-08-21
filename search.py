@@ -92,14 +92,54 @@ def detect_query_type(query: str) -> str:
         return 'general'
 
 def extract_person_from_query(query: str) -> Optional[str]:
-    """Extract person name from 'who is/was X' queries."""
-    match = re.search(r'\bwho\s+(is|was)\s+([^?]+)', query, re.IGNORECASE)
-    if match:
-        return match.group(2).strip()
-    return None
+    """Use OpenAI to extract person name from queries."""
+    try:
+        load_dotenv()
+        if not os.getenv('OPENAI_API_KEY'):
+            print("Warning: OPENAI_API_KEY not found, falling back to regex extraction")
+            # Fallback to regex
+            match = re.search(r'\bwho\s+(is|was)\s+([^?]+)', query, re.IGNORECASE)
+            if match:
+                return match.group(2).strip()
+            return None
+        
+        system_prompt = """You are a person name extractor for a historical document search system.
+        Extract the name of the person being asked about in the query.
+        
+        Examples:
+        - "Who was the first president to..." -> "first president"
+        - "Was John Glenn ever in combat?" -> "John Glenn"
+        - "Did the Naftal family arrive..." -> "Naftal family"
+        - "What did Thomas Jefferson do?" -> "Thomas Jefferson"
+        
+        Return only the person name, nothing else. If no specific person is mentioned, return "none"."""
+        
+        client = openai.OpenAI()
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Extract person name from: {query}"}
+            ],
+            max_tokens=20,
+            temperature=0
+        )
+        
+        person = response.choices[0].message.content.strip()
+        if person.lower() == "none":
+            return None
+        return person
+        
+    except Exception as e:
+        print(f"Error in OpenAI person extraction: {e}, falling back to regex")
+        # Fallback to regex
+        match = re.search(r'\bwho\s+(is|was)\s+([^?]+)', query, re.IGNORECASE)
+        if match:
+            return match.group(2).strip()
+        return None
 
 def extract_entities_from_query(query: str) -> Dict[str, List[str]]:
-    """Extract entities from query for expansion."""
+    """Use OpenAI to extract entities from query for expansion."""
     entities = {
         "persons": [],
         "places": [],
@@ -107,7 +147,85 @@ def extract_entities_from_query(query: str) -> Dict[str, List[str]]:
         "dates": [],
         "families": [],
         "companies": [],
-        "industries": []
+        "industries": [],
+        "settlement_terms": []
+    }
+    
+    try:
+        load_dotenv()
+        if not os.getenv('OPENAI_API_KEY'):
+            print("Warning: OPENAI_API_KEY not found, falling back to regex extraction")
+            return extract_entities_from_query_regex(query)
+        
+        system_prompt = """You are an entity extractor for a historical document search system.
+        Extract entities from the query and categorize them into the following types:
+        
+        - persons: Individual people mentioned (e.g., "John Glenn", "Thomas Jefferson")
+        - places: Locations, cities, counties, states, countries (e.g., "Guernsey County", "Cambridge", "Ohio")
+        - events: Historical events or incidents (e.g., "Morgan's raid", "Civil War")
+        - dates: Years, decades, centuries mentioned (e.g., "1806", "1700s", "19th century")
+        - families: Family names or groups (e.g., "Naftal family", "McDonald family")
+        - companies: Businesses, organizations, corporations (e.g., "Cambridge Iron and Steel Company")
+        - industries: Industry types or sectors (e.g., "steel", "coal", "manufacturing")
+        - settlement_terms: Terms related to settlement, immigration, arrival (e.g., "settlers", "arrived", "founded")
+        
+        IMPORTANT: For temporal queries asking "what years", "when", or "what time", include relevant historical periods or timeframes that might be relevant for the search. For example, if asking about early settlers in the 1800s, include "1800s" or "19th century" in dates. If the query asks about "early settlers" or "first settlers", this typically refers to the early 1800s (1800-1850) or 19th century.
+        
+        Return a JSON object with these categories as keys and arrays of extracted entities as values.
+        Example:
+        {
+            "persons": ["John Glenn"],
+            "places": ["Guernsey County"],
+            "events": [],
+            "dates": ["1806", "1807"],
+            "families": [],
+            "companies": [],
+            "industries": [],
+            "settlement_terms": ["settlers", "arrived"]
+        }
+        
+        Only include categories that have entities. If a category is empty, omit it from the JSON."""
+        
+        client = openai.OpenAI()
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Extract entities from: {query}"}
+            ],
+            max_tokens=300,
+            temperature=0
+        )
+        
+        try:
+            extracted_entities = json.loads(response.choices[0].message.content.strip())
+            
+            # Update our entities dict with extracted values
+            for category, values in extracted_entities.items():
+                if category in entities and isinstance(values, list):
+                    entities[category].extend(values)
+            
+            return entities
+            
+        except json.JSONDecodeError as e:
+            print(f"Error parsing OpenAI entity extraction JSON: {e}, falling back to regex")
+            return extract_entities_from_query_regex(query)
+        
+    except Exception as e:
+        print(f"Error in OpenAI entity extraction: {e}, falling back to regex")
+        return extract_entities_from_query_regex(query)
+
+def extract_entities_from_query_regex(query: str) -> Dict[str, List[str]]:
+    """Fallback regex-based entity extraction."""
+    entities = {
+        "persons": [],
+        "places": [],
+        "events": [],
+        "dates": [],
+        "families": [],
+        "companies": [],
+        "industries": [],
+        "settlement_terms": []
     }
     
     # Extract company names (e.g., "steel mill", "iron and steel company")
@@ -138,6 +256,23 @@ def extract_entities_from_query(query: str) -> Dict[str, List[str]]:
     for pattern in industry_patterns:
         matches = re.findall(pattern, query, re.IGNORECASE)
         entities["industries"].extend(matches)
+    
+    # Extract settlement-related terms
+    settlement_patterns = [
+        r'\bsettlers?\b',
+        r'\barriv(ed|al|e)\b',
+        r'\bimmigrat(ed|ion|e)\b',
+        r'\bcoloniz(ed|ation|e)\b',
+        r'\bfound(ed|ing|e)\b',
+        r'\bestablish(ed|ment|e)\b',
+        r'\bcame\b',
+        r'\bmoved\b',
+        r'\bsettled\b'
+    ]
+    
+    for pattern in settlement_patterns:
+        matches = re.findall(pattern, query, re.IGNORECASE)
+        entities["settlement_terms"].extend(matches)
     
     # Extract family names (e.g., "Naftal family", "McDonald family")
     family_patterns = [
@@ -225,6 +360,8 @@ def generate_query_expansions_openai(query: str, query_type: str) -> List[str]:
         3. Include broader and narrower terms
         4. Add historical context terms
         5. Include alternative phrasings
+        6. ALWAYS include key entity combinations (e.g., "Guernsey settlers" for queries about Guernsey settlers)
+        7. For temporal queries about settlers/immigration, include terms like "settlers", "immigration", "arrival", "founding"
         
         Return only the search terms, one per line, without numbering or explanations.
         Start with the original query, then add expansions."""
@@ -237,7 +374,7 @@ def generate_query_expansions_openai(query: str, query_type: str) -> List[str]:
                 {"role": "user", "content": f"Generate search expansions for: {query}"}
             ],
             max_tokens=200,
-            temperature=0.3
+            temperature=0
         )
         
         expansions_text = response.choices[0].message.content.strip()
@@ -266,7 +403,7 @@ def generate_query_expansions_openai(query: str, query_type: str) -> List[str]:
 def generate_query_expansions_simple(query: str, query_type: str) -> List[str]:
     """Simple fallback query expansion using basic patterns."""
     expansions = [query]
-    entities = extract_entities_from_query(query)
+    entities = extract_entities_from_query_regex(query)
     
     # Add basic entity expansions
     for family in entities["families"]:
@@ -281,13 +418,25 @@ def generate_query_expansions_simple(query: str, query_type: str) -> List[str]:
     for date in entities["dates"]:
         expansions.extend([f"in {date}", f"during {date}"])
     
+    # Add settlement-related expansions
+    for term in entities.get("settlement_terms", []):
+        expansions.extend([term, f"early {term}", f"first {term}"])
+    
     # Add type-specific terms
     if query_type == "when":
-        expansions.extend(["date", "year", "time"])
+        expansions.extend(["date", "year", "time", "when", "arrival", "settlement", "founding"])
     elif query_type == "company":
         expansions.extend(["company", "corporation", "business"])
     elif query_type == "person":
         expansions.extend(["person", "individual", "man", "woman"])
+    
+    # Add settlement-specific expansions for temporal queries
+    if query_type == "when" and any(term in query.lower() for term in ["settler", "arriv", "found", "establish"]):
+        expansions.extend([
+            "settlers arrival", "early settlers", "first settlers", 
+            "settlement history", "founding years", "establishment",
+            "immigration", "colonization", "settlement timeline"
+        ])
     
     # Remove duplicates
     seen = set()
@@ -444,10 +593,42 @@ def apply_query_boosting(candidates: List[Tuple[str, float]], query: str, conn) 
                 # Check for specific years mentioned in the query
                 if entities.get("dates"):
                     for date in entities["dates"]:
-                        cur.execute("""
-                            SELECT COUNT(*) FROM passage_years 
-                            WHERE passage_id = %s AND year = %s
-                        """, (passage_id, int(date)))
+                        # Handle century references like "1800s" or "19th century"
+                        if date.endswith('s') and date[:-1].isdigit():
+                            # Convert "1800s" to range 1800-1899
+                            century_start = int(date[:-1])
+                            century_end = century_start + 99
+                            cur.execute("""
+                                SELECT COUNT(*) FROM passage_years 
+                                WHERE passage_id = %s AND year BETWEEN %s AND %s
+                            """, (passage_id, century_start, century_end))
+                        elif "century" in date.lower():
+                            # Handle "19th century" -> 1800-1899
+                            if "19th" in date.lower():
+                                cur.execute("""
+                                    SELECT COUNT(*) FROM passage_years 
+                                    WHERE passage_id = %s AND year BETWEEN 1800 AND 1899
+                                """, (passage_id,))
+                            elif "18th" in date.lower():
+                                cur.execute("""
+                                    SELECT COUNT(*) FROM passage_years 
+                                    WHERE passage_id = %s AND year BETWEEN 1700 AND 1799
+                                """, (passage_id,))
+                            elif "20th" in date.lower():
+                                cur.execute("""
+                                    SELECT COUNT(*) FROM passage_years 
+                                    WHERE passage_id = %s AND year BETWEEN 1900 AND 1999
+                                """, (passage_id,))
+                            else:
+                                continue
+                        elif date.isdigit():
+                            # Regular year
+                            cur.execute("""
+                                SELECT COUNT(*) FROM passage_years 
+                                WHERE passage_id = %s AND year = %s
+                            """, (passage_id, int(date)))
+                        else:
+                            continue
                         
                         if cur.fetchone()[0] > 0:
                             # Strong boost for exact year match
@@ -465,6 +646,40 @@ def apply_query_boosting(candidates: List[Tuple[str, float]], query: str, conn) 
                     if year_count > 0:
                         # Moderate boost for passages with any dates
                         boost_multiplier *= 1.3
+                
+                # Check for settlement-related terms in the query
+                if entities.get("settlement_terms"):
+                    settlement_boost = False
+                    for term in entities["settlement_terms"]:
+                        # Check if passage contains settlement-related entities
+                        cur.execute("""
+                            SELECT 1 FROM passage_entities 
+                            WHERE passage_id = %s 
+                            AND (ent_type = 'ORG' OR ent_type = 'GPE')
+                            AND (norm_entity LIKE %s OR norm_entity LIKE %s OR norm_entity LIKE %s)
+                        """, (passage_id, f"%settler%", f"%arriv%", f"%settlers%"))
+                        
+                        if cur.fetchone():
+                            # Boost for settlement-related content
+                            boost_multiplier *= 1.4
+                            settlement_boost = True
+                            break
+                    
+                    # Additional boost for passages with both settlement terms AND years
+                    if settlement_boost and year_count > 0:
+                        boost_multiplier *= 1.2
+                
+                # Special boost for settlement-related organization entities
+                cur.execute("""
+                    SELECT 1 FROM passage_entities 
+                    WHERE passage_id = %s 
+                    AND ent_type = 'ORG' 
+                    AND norm_entity LIKE %s
+                """, (passage_id, f"%settler%"))
+                
+                if cur.fetchone():
+                    # Strong boost for settlement organization entities
+                    boost_multiplier *= 1.8
             
             boosted_score = score * boost_multiplier
             boosted_candidates.append((passage_id, boosted_score))
