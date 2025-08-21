@@ -1,0 +1,36 @@
+version: "3.9"
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: codex
+      POSTGRES_PASSWORD: codex
+      POSTGRES_DB: codex
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+
+  meili:
+    image: getmeili/meilisearch:latest
+    environment:
+      MEILI_NO_ANALYTICS: "true"
+    command: ["meilisearch", "--env", "development"]
+    ports: ["7700:7700"]
+
+  api: # optional for POC; used only to expose /search if you want HTTP
+    build: ./api
+    environment:
+      DATABASE_URL: postgresql://codex:codex@postgres:5432/codex
+      MEILI_URL: http://meili:7700
+    depends_on: [postgres, meili]
+    ports: ["8000:8000"]
+
+volumes:
+  pgdata:
+
+
+
+
+
+
+
+
