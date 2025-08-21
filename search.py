@@ -39,14 +39,28 @@ def detect_query_type(query: str) -> str:
     """Detect query type: 'who', 'when', 'where', 'factoid', or 'general'."""
     query_lower = query.lower()
     
+    # Person queries
     if re.search(r'\bwho\s+(is|was)\b', query_lower):
         return 'who'
-    elif re.search(r'\bwhen\b', query_lower):
+    
+    # Temporal queries - expanded patterns
+    elif (re.search(r'\bwhen\b', query_lower) or 
+          re.search(r'\bdid.*\b(in|during|on)\b.*\d{4}', query_lower) or
+          re.search(r'\bwhat\s+year', query_lower) or
+          re.search(r'\bwhat\s+years', query_lower)):
         return 'when'
+    
+    # Location queries
     elif re.search(r'\bwhere\b', query_lower):
         return 'where'
-    elif re.search(r'\bwhat\b.*\b(taverns?|inns?|places?|buildings?)\b', query_lower):
+    
+    # Factual queries about specific entities/events
+    elif (re.search(r'\bwhat\b.*\b(taverns?|inns?|places?|buildings?)\b', query_lower) or
+          re.search(r'\bdid\b.*\b(family|person|group)\b', query_lower) or
+          re.search(r'\bwhat\s+had\b', query_lower) or
+          re.search(r'\bwhat\s+did\b', query_lower)):
         return 'factoid'
+    
     else:
         return 'general'
 
@@ -63,8 +77,22 @@ def extract_entities_from_query(query: str) -> Dict[str, List[str]]:
         "persons": [],
         "places": [],
         "events": [],
-        "dates": []
+        "dates": [],
+        "families": []
     }
+    
+    # Extract family names (e.g., "Naftal family", "McDonald family")
+    family_patterns = [
+        r'\b([A-Z][a-z]+)\s+family\b',
+        r'\bfamily\s+([A-Z][a-z]+)\b'
+    ]
+    
+    for pattern in family_patterns:
+        matches = re.findall(pattern, query)
+        for match in matches:
+            entities["families"].append(match)
+            # Also add as person for individual name matching
+            entities["persons"].append(match)
     
     # Extract person names (simple heuristic)
     person_patterns = [
@@ -76,9 +104,14 @@ def extract_entities_from_query(query: str) -> Dict[str, List[str]]:
         matches = re.findall(pattern, query)
         for match in matches:
             if isinstance(match, tuple):
-                entities["persons"].append(" ".join(match))
+                name = " ".join(match)
+                # Avoid adding family names twice
+                if name not in entities["families"]:
+                    entities["persons"].append(name)
             else:
-                entities["persons"].append(match)
+                # Avoid adding family names twice
+                if match not in entities["families"]:
+                    entities["persons"].append(match)
     
     # Extract dates/years
     year_pattern = r'\b(17|18|19|20)\d{2}\b'
@@ -107,6 +140,18 @@ def generate_query_expansions(query: str, query_type: str) -> List[str]:
     # Extract entities
     entities = extract_entities_from_query(query)
     
+    # Add family name expansions
+    for family in entities["families"]:
+        expansions.extend([
+            family,  # Just the family name
+            f"{family} family",
+            f"family {family}"
+        ])
+    
+    # Add person name expansions
+    for person in entities["persons"]:
+        expansions.append(person)
+    
     # Add date expansions for temporal queries
     if query_type == "when":
         for date in entities["dates"]:
@@ -116,7 +161,40 @@ def generate_query_expansions(query: str, query_type: str) -> List[str]:
             "date", "year", "time", "period", "era"
         ])
     
-    return expansions
+    # Add place expansions
+    for place in entities["places"]:
+        expansions.append(place)
+    
+    # Add arrival/settlement synonyms for family queries
+    if entities["families"] or query_type == "factoid":
+        arrival_synonyms = [
+            "arrive", "arrived", "arrival",
+            "come", "came", "coming",
+            "settle", "settled", "settlement",
+            "migrate", "migrated", "migration",
+            "move", "moved", "moving"
+        ]
+        expansions.extend(arrival_synonyms)
+    
+    # Add temporal context for factoid queries
+    if query_type == "factoid" and entities["dates"]:
+        for date in entities["dates"]:
+            expansions.extend([
+                f"in {date}",
+                f"during {date}",
+                f"by {date}",
+                f"around {date}"
+            ])
+    
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_expansions = []
+    for exp in expansions:
+        if exp.lower() not in seen:
+            seen.add(exp.lower())
+            unique_expansions.append(exp)
+    
+    return unique_expansions
 
 def get_meili_candidates(query: str, k: int = 200, document_id: Optional[str] = None) -> List[Tuple[str, int]]:
     """Get BM25 candidates from Meilisearch."""
@@ -269,6 +347,46 @@ def apply_query_boosting(candidates: List[Tuple[str, float]], query: str, conn) 
         
         return boosted_candidates
     
+    elif query_type == 'factoid':
+        # Boost passages with family names and temporal information
+        boosted_candidates = []
+        
+        for passage_id, score in candidates:
+            boost_multiplier = 1.0
+            
+            # Check if passage has family-related entities
+            with conn.cursor() as cur:
+                # Check for family names in entities
+                if entities.get("families"):
+                    for family in entities["families"]:
+                        cur.execute("""
+                            SELECT 1 FROM passage_entities 
+                            WHERE passage_id = %s 
+                            AND ent_type = 'PERSON' 
+                            AND (norm_entity = %s OR norm_entity LIKE %s)
+                        """, (passage_id, family.lower(), f"%{family.lower()}%"))
+                        
+                        if cur.fetchone():
+                            boost_multiplier *= 1.3
+                            break
+                
+                # Check for temporal information
+                if entities.get("dates"):
+                    for date in entities["dates"]:
+                        cur.execute("""
+                            SELECT COUNT(*) FROM passage_years 
+                            WHERE passage_id = %s AND year = %s
+                        """, (passage_id, int(date)))
+                        
+                        if cur.fetchone()[0] > 0:
+                            boost_multiplier *= 1.2
+                            break
+            
+            boosted_score = score * boost_multiplier
+            boosted_candidates.append((passage_id, boosted_score))
+        
+        return boosted_candidates
+    
     return candidates
 
 def get_passage_details(conn, passage_ids: List[str]) -> List[Dict[str, Any]]:
@@ -335,9 +453,24 @@ def main(query: str, k: int, document_id: Optional[str]):
     if len(expansions) > 1:
         print(f"Query expansions: {expansions[1:]}")  # Skip the original query
     
-    # Get candidates from both sources using original query
+    # Get candidates from both sources using original query AND expansions
     print("Getting BM25 candidates...")
     meili_candidates = get_meili_candidates(query, k=200, document_id=document_id)
+    
+    # Add candidates from expansions
+    for expansion in expansions[1:]:  # Skip original query
+        expansion_candidates = get_meili_candidates(expansion, k=50, document_id=document_id)
+        meili_candidates.extend(expansion_candidates)
+    
+    # Remove duplicates while preserving order
+    seen_ids = set()
+    unique_meili_candidates = []
+    for passage_id, rank in meili_candidates:
+        if passage_id not in seen_ids:
+            seen_ids.add(passage_id)
+            unique_meili_candidates.append((passage_id, rank))
+    
+    meili_candidates = unique_meili_candidates[:200]  # Keep top 200
     print(f"Found {len(meili_candidates)} BM25 candidates")
     
     print("Getting vector candidates...")
