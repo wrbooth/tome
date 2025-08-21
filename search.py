@@ -36,12 +36,21 @@ def rrf(rank: int) -> float:
     return 1.0 / (RRF_K + rank)
 
 def detect_query_type(query: str) -> str:
-    """Detect query type: 'who', 'when', 'where', 'factoid', or 'general'."""
+    """Detect query type: 'who', 'when', 'where', 'factoid', 'company', or 'general'."""
     query_lower = query.lower()
     
     # Person queries
     if re.search(r'\bwho\s+(is|was)\b', query_lower):
         return 'who'
+    
+    # Company/organization queries
+    elif (re.search(r'\bwhat\s+was\s+the\s+name\s+of\b', query_lower) or
+          re.search(r'\bcompany\b', query_lower) or
+          re.search(r'\bcorporation\b', query_lower) or
+          re.search(r'\borganization\b', query_lower) or
+          re.search(r'\bsteel\s+mill\b', query_lower) or
+          re.search(r'\biron\s+and\s+steel\b', query_lower)):
+        return 'company'
     
     # Temporal queries - expanded patterns
     elif (re.search(r'\bwhen\b', query_lower) or 
@@ -78,8 +87,39 @@ def extract_entities_from_query(query: str) -> Dict[str, List[str]]:
         "places": [],
         "events": [],
         "dates": [],
-        "families": []
+        "families": [],
+        "companies": [],
+        "industries": []
     }
+    
+    # Extract company names (e.g., "steel mill", "iron and steel company")
+    company_patterns = [
+        r'\b([A-Z][a-z]+)\s+([A-Z][a-z]+)\s+Company\b',
+        r'\b([A-Z][a-z]+)\s+Company\b',
+        r'\bsteel\s+mill\b',
+        r'\biron\s+and\s+steel\b'
+    ]
+    
+    for pattern in company_patterns:
+        matches = re.findall(pattern, query, re.IGNORECASE)
+        for match in matches:
+            if isinstance(match, tuple):
+                entities["companies"].append(" ".join(match))
+            else:
+                entities["companies"].append(match)
+    
+    # Extract industry terms
+    industry_patterns = [
+        r'\bsteel\b',
+        r'\biron\b',
+        r'\bmill\b',
+        r'\bfactory\b',
+        r'\bmanufacturing\b'
+    ]
+    
+    for pattern in industry_patterns:
+        matches = re.findall(pattern, query, re.IGNORECASE)
+        entities["industries"].extend(matches)
     
     # Extract family names (e.g., "Naftal family", "McDonald family")
     family_patterns = [
@@ -164,6 +204,30 @@ def generate_query_expansions(query: str, query_type: str) -> List[str]:
     # Add place expansions
     for place in entities["places"]:
         expansions.append(place)
+    
+    # Add company expansions
+    for company in entities["companies"]:
+        expansions.append(company)
+    
+    # Add industry expansions
+    for industry in entities["industries"]:
+        expansions.append(industry)
+        # Add industry synonyms
+        if industry.lower() == "steel":
+            expansions.extend(["iron", "metal", "steelworks"])
+        elif industry.lower() == "iron":
+            expansions.extend(["steel", "metal", "ironworks"])
+        elif industry.lower() == "mill":
+            expansions.extend(["factory", "plant", "works"])
+    
+    # Add company-related terms for company queries
+    if query_type == "company" or entities["companies"] or entities["industries"]:
+        company_terms = [
+            "company", "corporation", "incorporated", "inc",
+            "steel mill", "iron works", "factory", "plant",
+            "manufacturing", "industry", "business"
+        ]
+        expansions.extend(company_terms)
     
     # Add arrival/settlement synonyms for family queries
     if entities["families"] or query_type == "factoid":
