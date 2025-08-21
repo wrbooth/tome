@@ -74,11 +74,9 @@ def extract_text_from_txt(file_path: str) -> List[Dict[str, Any]]:
     return pages
 
 def chunk_text(pages: List[Dict[str, Any]], max_tokens: int = 500, overlap: float = 0.1) -> List[Dict[str, Any]]:
-    """Chunk text into passages of approximately max_tokens, allowing cross-page chunks."""
+    """Chunk text into passages of approximately max_tokens, keeping chunks within single pages."""
     chunks = []
     
-    # Collect all paragraphs with their page numbers
-    all_paragraphs = []
     for page_data in pages:
         page_num = page_data["page"]
         text = page_data["text"]
@@ -86,57 +84,46 @@ def chunk_text(pages: List[Dict[str, Any]], max_tokens: int = 500, overlap: floa
         # Split by paragraphs
         paragraphs = [p.strip() for p in text.split('\n') if p.strip()]
         
+        # Create chunks within this page only
+        current_chunk = []
+        current_tokens = 0
+        
         for paragraph in paragraphs:
-            all_paragraphs.append({
-                "page": page_num,
-                "text": paragraph,
-                "tokens": len(paragraph.split()) * 1.3  # Rough token estimation
-            })
-    
-    # Create chunks across pages
-    current_chunk = []
-    current_tokens = 0
-    chunk_start_page = None
-    
-    for i, para in enumerate(all_paragraphs):
-        # If adding this paragraph would exceed max_tokens, save current chunk
-        if current_tokens + para["tokens"] > max_tokens and current_chunk:
-            # Save current chunk
-            chunk_text = ' '.join([p["text"] for p in current_chunk])
+            para_tokens = len(paragraph.split()) * 1.3  # Rough token estimation
+            
+            # If adding this paragraph would exceed max_tokens, save current chunk
+            if current_tokens + para_tokens > max_tokens and current_chunk:
+                # Save current chunk
+                chunk_text = ' '.join(current_chunk)
+                chunks.append({
+                    "page": page_num,
+                    "text": chunk_text,
+                    "char_start": 0,
+                    "char_end": len(chunk_text),
+                    "headings_path": []
+                })
+                
+                # Start new chunk with minimal overlap (just the last paragraph)
+                if len(current_chunk) > 0:
+                    current_chunk = [current_chunk[-1]]
+                    current_tokens = len(current_chunk[0].split()) * 1.3
+                else:
+                    current_chunk = []
+                    current_tokens = 0
+            
+            current_chunk.append(paragraph)
+            current_tokens += para_tokens
+        
+        # Add final chunk for this page
+        if current_chunk:
+            chunk_text = ' '.join(current_chunk)
             chunks.append({
-                "page": chunk_start_page,
+                "page": page_num,
                 "text": chunk_text,
                 "char_start": 0,
                 "char_end": len(chunk_text),
                 "headings_path": []
             })
-            
-            # Start new chunk with minimal overlap (just the last paragraph)
-            if len(current_chunk) > 0:
-                current_chunk = [current_chunk[-1]]
-                current_tokens = current_chunk[0]["tokens"]
-                chunk_start_page = current_chunk[0]["page"]
-            else:
-                current_chunk = []
-                current_tokens = 0
-                chunk_start_page = para["page"]
-        
-        if not current_chunk:
-            chunk_start_page = para["page"]
-        
-        current_chunk.append(para)
-        current_tokens += para["tokens"]
-    
-    # Add final chunk
-    if current_chunk:
-        chunk_text = ' '.join([p["text"] for p in current_chunk])
-        chunks.append({
-            "page": chunk_start_page,
-            "text": chunk_text,
-            "char_start": 0,
-            "char_end": len(chunk_text),
-            "headings_path": []
-        })
     
     return chunks
 
