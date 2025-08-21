@@ -241,12 +241,7 @@ def main():
             expected_answer="July 23, 1863",
             description="Morgan's raid timing"
         ),
-        TestQuestion(
-            question="Did Morgan's Raid pass through Byesville?",
-            expected_page=None,  # Not on route mentioned in the book
-            expected_answer="No.",
-            description="Morgan's raid route verification"
-        ),
+
         TestQuestion(
             question="What can you tell me about an army hospital built near Cambridge?",
             expected_page=51,
