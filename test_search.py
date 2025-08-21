@@ -101,6 +101,18 @@ def evaluate_search_performance(question: TestQuestion, results: List[Dict]) -> 
     """Evaluate the performance of a search for a specific question."""
     expected_page = question.expected_page
     
+    # Special case: expected_page=None means the information is not in the book
+    if expected_page is None:
+        # For questions where the answer is "No" or information is not available,
+        # we expect that the search should not find relevant pages
+        # This is a special case that needs manual evaluation
+        return {
+            "found": False,
+            "rank": None,
+            "score": None,
+            "status": "SPECIAL CASE - Information not expected to be in book"
+        }
+    
     # Find the expected page in results
     page_result = find_page_in_results(results, expected_page)
     
@@ -210,6 +222,84 @@ def main():
             expected_page=50,
             expected_answer="The Cambridge Iron and Steel Company",
             description="Steel mill company identification"
+        ),
+        TestQuestion(
+            question="When did Cambridge get its second major railroad going north and south?",
+            expected_page=43,
+            expected_answer="1873",
+            description="Cambridge railroad expansion"
+        ),
+        TestQuestion(
+            question="What was the old name for Maysville, Kentucky, in the 1700s?",
+            expected_page=19,
+            expected_answer="Limestone",
+            description="Maysville historical name"
+        ),
+        TestQuestion(
+            question="When did Morgan's raid reach Cumberland?",
+            expected_page=45,
+            expected_answer="July 23, 1863",
+            description="Morgan's raid timing"
+        ),
+        TestQuestion(
+            question="Did Morgan's Raid pass through Byesville?",
+            expected_page=None,  # Not on route mentioned in the book
+            expected_answer="No.",
+            description="Morgan's raid route verification"
+        ),
+        TestQuestion(
+            question="What can you tell me about an army hospital built near Cambridge?",
+            expected_page=51,
+            expected_answer="the Fletcher General Hospital story",
+            description="Army hospital information"
+        ),
+        TestQuestion(
+            question="When and where did glass manufacturing start in Guernsey County?",
+            expected_page=50,
+            expected_answer="1884, in Quaker City",
+            description="Glass manufacturing history"
+        ),
+        TestQuestion(
+            question="When did Cambridge's steel mill go out of business?",
+            expected_page=50,
+            expected_answer="in the 1940s",
+            description="Steel mill closure"
+        ),
+        TestQuestion(
+            question="Who were the main historians of Guernsey County?",
+            expected_page=9,
+            expected_answer="main historians of Guernsey County",
+            description="County historians identification"
+        ),
+        TestQuestion(
+            question="When did Congress authorize building the National Road?",
+            expected_page=38,
+            expected_answer="1802",
+            description="National Road authorization"
+        ),
+        TestQuestion(
+            question="Did any of the founders of Cambridge participate in the Revolutionary War?",
+            expected_page=27,
+            expected_answer="Jacob Gomber did",
+            description="Cambridge founders Revolutionary War participation"
+        ),
+        TestQuestion(
+            question="Who was the first sitting president to pass through Cambridge?",
+            expected_page=58,
+            expected_answer="James Monroe",
+            description="First president to visit Cambridge"
+        ),
+        TestQuestion(
+            question="Who built the Colonial Theater, and when?",
+            expected_page=92,
+            expected_answer="not clear who built it, but it came to be around 1901",
+            description="Colonial Theater construction"
+        ),
+        TestQuestion(
+            question="Was John Glenn ever in combat?",
+            expected_page=51,
+            expected_answer="Yes.",
+            description="John Glenn combat experience"
         )
     ]
     

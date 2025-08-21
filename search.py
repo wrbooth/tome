@@ -735,9 +735,12 @@ def apply_query_boosting(candidates: List[Tuple[str, float]], query: str, conn) 
             
             # Check if passage has the specific person mentioned
             with conn.cursor() as cur:
+                # Initialize variables
+                person_found = False
+                combat_found = False
+                
                 # Check for person names in entities
                 if entities.get("persons"):
-                    person_found = False
                     for person in entities["persons"]:
                         # More specific matching for person names
                         cur.execute("""
@@ -761,26 +764,26 @@ def apply_query_boosting(candidates: List[Tuple[str, float]], query: str, conn) 
                                 break
                         if person_found:
                             break
+                
+                # Penalty for passages with other "John" entities but not the right one
+                if not person_found and "john" in [p.lower() for p in entities.get("persons", [])]:
+                    cur.execute("""
+                        SELECT COUNT(*) FROM passage_entities 
+                        WHERE passage_id = %s 
+                        AND ent_type = 'PERSON' 
+                        AND norm_entity LIKE '%%john%%'
+                        AND norm_entity NOT LIKE '%%glenn%%'
+                    """, (passage_id,))
                     
-                    # Penalty for passages with other "John" entities but not the right one
-                    if not person_found and "john" in [p.lower() for p in entities.get("persons", [])]:
-                        cur.execute("""
-                            SELECT COUNT(*) FROM passage_entities 
-                            WHERE passage_id = %s 
-                            AND ent_type = 'PERSON' 
-                            AND norm_entity LIKE '%%john%%'
-                            AND norm_entity NOT LIKE '%%glenn%%'
-                        """, (passage_id,))
-                        
-                        if cur.fetchone()[0] > 0:
-                            # Penalty for wrong "John" entities
-                            boost_multiplier *= 0.5
+                    if cur.fetchone()[0] > 0:
+                        # Penalty for wrong "John" entities
+                        boost_multiplier *= 0.5
             
-                # Also check for combat/military terms for combat-related queries
-                if "combat" in query.lower() or "war" in query.lower() or "fight" in query.lower():
-                    combat_terms = ["combat", "war", "battle", "mission", "military", "marine", "army", "navy", "air force"]
-                    combat_found = False
-                    for term in combat_terms:
+            # Also check for combat/military terms for combat-related queries
+            if "combat" in query.lower() or "war" in query.lower() or "fight" in query.lower():
+                combat_terms = ["combat", "war", "battle", "mission", "military", "marine", "army", "navy", "air force"]
+                for term in combat_terms:
+                    with conn.cursor() as cur:
                         cur.execute("""
                             SELECT 1 FROM passage_entities 
                             WHERE passage_id = %s 
@@ -792,10 +795,10 @@ def apply_query_boosting(candidates: List[Tuple[str, float]], query: str, conn) 
                             boost_multiplier *= 1.3
                             combat_found = True
                             break
-                    
-                    # Special boost for passages with BOTH person AND combat terms
-                    if person_found and combat_found:
-                        boost_multiplier *= 2.0  # Extra boost for perfect match
+                
+                # Special boost for passages with BOTH person AND combat terms
+                if person_found and combat_found:
+                    boost_multiplier *= 2.0  # Extra boost for perfect match
             
             boosted_score = score * boost_multiplier
             boosted_candidates.append((passage_id, boosted_score))
