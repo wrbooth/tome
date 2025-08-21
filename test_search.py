@@ -8,6 +8,8 @@ Tests search performance on specific historical questions with expected page num
 import subprocess
 import re
 import sys
+import multiprocessing as mp
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
 from datetime import datetime
@@ -144,6 +146,61 @@ def evaluate_search_performance(question: TestQuestion, results: List[Dict]) -> 
         "status": f"{status} - Page {expected_page} found at rank {rank}"
     }
 
+def run_single_test(test_data: Tuple[int, TestQuestion]) -> Dict:
+    """Run a single test and return the result."""
+    test_num, question = test_data
+    
+    print(f"Test {test_num}: {question.question}")
+    
+    # Run the search
+    search_result = run_search(question.question, k=20)
+    
+    if not search_result["success"]:
+        print(f"  ERROR: {search_result['error']}")
+        return {
+            "test_num": test_num,
+            "question": question,
+            "search_result": search_result,
+            "evaluation": {
+                "found": False,
+                "rank": None,
+                "score": None,
+                "status": f"ERROR - {search_result['error']}"
+            }
+        }
+    
+    # Parse the results
+    results = parse_search_results(search_result["output"])
+    
+    if not results:
+        print(f"  ERROR: No results parsed from search output")
+        return {
+            "test_num": test_num,
+            "question": question,
+            "search_result": search_result,
+            "evaluation": {
+                "found": False,
+                "rank": None,
+                "score": None,
+                "status": "ERROR - No results parsed"
+            }
+        }
+    
+    # Evaluate performance
+    evaluation = evaluate_search_performance(question, results)
+    
+    print(f"  Result: {evaluation['status']}")
+    if evaluation["found"]:
+        print(f"  Score: {evaluation['score']:.3f}")
+    
+    return {
+        "test_num": test_num,
+        "question": question,
+        "search_result": search_result,
+        "evaluation": evaluation,
+        "results": results
+    }
+
 def print_test_results(test_results: List[Dict]):
     """Print formatted test results."""
     print("\n" + "="*80)
@@ -175,11 +232,14 @@ def print_test_results(test_results: List[Dict]):
     print("DETAILED RESULTS:")
     print("-" * 80)
     
-    for i, result in enumerate(test_results, 1):
+    # Sort results by test number to maintain order
+    sorted_results = sorted(test_results, key=lambda x: x["test_num"])
+    
+    for result in sorted_results:
         question = result["question"]
         evaluation = result["evaluation"]
         
-        print(f"{i}. {question.question}")
+        print(f"{result['test_num']}. {question.question}")
         print(f"   Expected: Page {question.expected_page} - {question.expected_answer}")
         print(f"   Result: {evaluation['status']}")
         
@@ -299,63 +359,42 @@ def main():
     ]
     
     print("Running Codex Search System Tests...")
-    print(f"Testing {len(test_questions)} questions...")
+    print(f"Testing {len(test_questions)} questions in parallel...")
     print()
+    
+    # Prepare test data for parallel processing
+    test_data = [(i, question) for i, question in enumerate(test_questions, 1)]
+    
+    # Determine number of workers (use CPU count, but cap at 8 to avoid overwhelming the system)
+    max_workers = min(mp.cpu_count(), 8)
+    print(f"Using {max_workers} parallel workers...")
     
     test_results = []
     
-    for i, question in enumerate(test_questions, 1):
-        print(f"Test {i}/{len(test_questions)}: {question.question}")
+    # Run tests in parallel
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all tests
+        future_to_test = {executor.submit(run_single_test, test_data[i]): i for i in range(len(test_data))}
         
-        # Run the search
-        search_result = run_search(question.question, k=20)
-        
-        if not search_result["success"]:
-            print(f"  ERROR: {search_result['error']}")
-            test_results.append({
-                "question": question,
-                "search_result": search_result,
-                "evaluation": {
-                    "found": False,
-                    "rank": None,
-                    "score": None,
-                    "status": f"ERROR - {search_result['error']}"
-                }
-            })
-            continue
-        
-        # Parse the results
-        results = parse_search_results(search_result["output"])
-        
-        if not results:
-            print(f"  ERROR: No results parsed from search output")
-            test_results.append({
-                "question": question,
-                "search_result": search_result,
-                "evaluation": {
-                    "found": False,
-                    "rank": None,
-                    "score": None,
-                    "status": "ERROR - No results parsed"
-                }
-            })
-            continue
-        
-        # Evaluate performance
-        evaluation = evaluate_search_performance(question, results)
-        
-        print(f"  Result: {evaluation['status']}")
-        if evaluation["found"]:
-            print(f"  Score: {evaluation['score']:.3f}")
-        
-        test_results.append({
-            "question": question,
-            "search_result": search_result,
-            "evaluation": evaluation,
-            "results": results
-        })
-        
-        print()
+        # Collect results as they complete
+        for future in as_completed(future_to_test):
+            try:
+                result = future.result()
+                test_results.append(result)
+            except Exception as exc:
+                test_num = future_to_test[future] + 1
+                print(f"Test {test_num} generated an exception: {exc}")
+                test_results.append({
+                    "test_num": test_num,
+                    "question": test_questions[future_to_test[future]],
+                    "search_result": {"success": False, "error": str(exc)},
+                    "evaluation": {
+                        "found": False,
+                        "rank": None,
+                        "score": None,
+                        "status": f"ERROR - Exception: {exc}"
+                    }
+                })
     
     # Print comprehensive results
     print_test_results(test_results)
