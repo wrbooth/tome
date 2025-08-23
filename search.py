@@ -13,7 +13,6 @@ from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 import numpy as np
 from collections import defaultdict
-import re
 import json
 from typing import List, Dict, Any, Tuple, Optional
 from meilisearch import Client
@@ -96,11 +95,7 @@ def extract_person_from_query(query: str) -> Optional[str]:
     try:
         load_dotenv()
         if not os.getenv('OPENAI_API_KEY'):
-            print("Warning: OPENAI_API_KEY not found, falling back to regex extraction")
-            # Fallback to regex
-            match = re.search(r'\bwho\s+(is|was)\s+([^?]+)', query, re.IGNORECASE)
-            if match:
-                return match.group(2).strip()
+            print("Warning: OPENAI_API_KEY not found, returning None")
             return None
         
         system_prompt = """You are a person name extractor for a historical document search system.
@@ -131,11 +126,7 @@ def extract_person_from_query(query: str) -> Optional[str]:
         return person
         
     except Exception as e:
-        print(f"Error in OpenAI person extraction: {e}, falling back to regex")
-        # Fallback to regex
-        match = re.search(r'\bwho\s+(is|was)\s+([^?]+)', query, re.IGNORECASE)
-        if match:
-            return match.group(2).strip()
+        print(f"Error in OpenAI person extraction: {e}, returning None")
         return None
 
 def extract_entities_from_query(query: str) -> Dict[str, List[str]]:
@@ -154,8 +145,8 @@ def extract_entities_from_query(query: str) -> Dict[str, List[str]]:
     try:
         load_dotenv()
         if not os.getenv('OPENAI_API_KEY'):
-            print("Warning: OPENAI_API_KEY not found, falling back to regex extraction")
-            return extract_entities_from_query_regex(query)
+            print("Warning: OPENAI_API_KEY not found, returning empty entities")
+            return entities
         
         system_prompt = """You are an entity extractor for a historical document search system.
         Extract entities from the query and categorize them into the following types:
@@ -210,134 +201,14 @@ def extract_entities_from_query(query: str) -> Dict[str, List[str]]:
             return entities
             
         except json.JSONDecodeError as e:
-            print(f"Error parsing OpenAI entity extraction JSON: {e}, falling back to regex")
-            return extract_entities_from_query_regex(query)
+            print(f"Error parsing OpenAI entity extraction JSON: {e}, returning empty entities")
+            return entities
         
     except Exception as e:
-        print(f"Error in OpenAI entity extraction: {e}, falling back to regex")
-        return extract_entities_from_query_regex(query)
+        print(f"Error in OpenAI entity extraction: {e}, returning empty entities")
+        return entities
 
-def extract_entities_from_query_regex(query: str) -> Dict[str, List[str]]:
-    """Fallback regex-based entity extraction."""
-    entities = {
-        "persons": [],
-        "places": [],
-        "events": [],
-        "dates": [],
-        "families": [],
-        "companies": [],
-        "industries": [],
-        "settlement_terms": []
-    }
-    
-    # Extract company names (e.g., "steel mill", "iron and steel company")
-    company_patterns = [
-        r'\b([A-Z][a-z]+)\s+([A-Z][a-z]+)\s+Company\b',
-        r'\b([A-Z][a-z]+)\s+Company\b',
-        r'\bsteel\s+mill\b',
-        r'\biron\s+and\s+steel\b'
-    ]
-    
-    for pattern in company_patterns:
-        matches = re.findall(pattern, query, re.IGNORECASE)
-        for match in matches:
-            if isinstance(match, tuple):
-                entities["companies"].append(" ".join(match))
-            else:
-                entities["companies"].append(match)
-    
-    # Extract industry terms
-    industry_patterns = [
-        r'\bsteel\b',
-        r'\biron\b',
-        r'\bmill\b',
-        r'\bfactory\b',
-        r'\bmanufacturing\b'
-    ]
-    
-    for pattern in industry_patterns:
-        matches = re.findall(pattern, query, re.IGNORECASE)
-        entities["industries"].extend(matches)
-    
-    # Extract settlement-related terms
-    settlement_patterns = [
-        r'\bsettlers?\b',
-        r'\barriv(ed|al|e)\b',
-        r'\bimmigrat(ed|ion|e)\b',
-        r'\bcoloniz(ed|ation|e)\b',
-        r'\bfound(ed|ing|e)\b',
-        r'\bestablish(ed|ment|e)\b',
-        r'\bcame\b',
-        r'\bmoved\b',
-        r'\bsettled\b'
-    ]
-    
-    for pattern in settlement_patterns:
-        matches = re.findall(pattern, query, re.IGNORECASE)
-        entities["settlement_terms"].extend(matches)
-    
-    # Extract family names (e.g., "Naftal family", "McDonald family")
-    family_patterns = [
-        r'\b([A-Z][a-z]+)\s+family\b',
-        r'\bfamily\s+([A-Z][a-z]+)\b'
-    ]
-    
-    for pattern in family_patterns:
-        matches = re.findall(pattern, query)
-        for match in matches:
-            entities["families"].append(match)
-            # Also add as person for individual name matching
-            entities["persons"].append(match)
-    
-    # Extract person names (simple heuristic)
-    person_patterns = [
-        r'\b([A-Z][a-z]+)\s+([A-Z][a-z]+)\b',  # First Last
-        r'\b([A-Z][a-z]+)\b'  # Single capitalized word
-    ]
-    
-    for pattern in person_patterns:
-        matches = re.findall(pattern, query)
-        for match in matches:
-            if isinstance(match, tuple):
-                name = " ".join(match)
-                # Avoid adding family names twice
-                if name not in entities["families"]:
-                    entities["persons"].append(name)
-            else:
-                # Avoid adding family names twice
-                if match not in entities["families"]:
-                    entities["persons"].append(match)
-    
-    # Extract dates/years
-    year_pattern = r'\b(17|18|19|20)\d{2}\b'
-    entities["dates"] = re.findall(year_pattern, query)
-    
-    # Also extract century references and convert to specific years
-    century_patterns = [
-        (r'\b1700s\b', ['1700', '1701', '1702', '1703', '1704', '1705', '1706', '1707', '1708', '1709']),
-        (r'\b1800s\b', ['1800', '1801', '1802', '1803', '1804', '1805', '1806', '1807', '1808', '1809']),
-        (r'\b1900s\b', ['1900', '1901', '1902', '1903', '1904', '1905', '1906', '1907', '1908', '1909']),
-    ]
-    
-    for pattern, years in century_patterns:
-        if re.search(pattern, query):
-            entities["dates"].extend(years)
-    
-    # Extract places (simple heuristic)
-    place_patterns = [
-        r'\b([A-Z][a-z]+)\s+(County|State|Town|City|Village)\b',
-        r'\b([A-Z][a-z]+)\s+([A-Z][a-z]+)\b'  # Potential place names
-    ]
-    
-    for pattern in place_patterns:
-        matches = re.findall(pattern, query)
-        for match in matches:
-            if isinstance(match, tuple):
-                entities["places"].append(" ".join(match))
-            else:
-                entities["places"].append(match)
-    
-    return entities
+
 
 def generate_query_expansions_openai(query: str, query_type: str) -> List[str]:
     """Use OpenAI to generate contextually relevant query expansions."""
@@ -347,8 +218,8 @@ def generate_query_expansions_openai(query: str, query_type: str) -> List[str]:
         
         # Check if OpenAI API key is available
         if not os.getenv('OPENAI_API_KEY'):
-            print("Warning: OPENAI_API_KEY not found, falling back to simple expansion")
-            return generate_query_expansions_simple(query, query_type)
+            print("Warning: OPENAI_API_KEY not found, returning original query only")
+            return [query]
         
         system_prompt = f"""You are a query expansion expert for a historical document search system. 
         Given a query and its type, generate 5-10 additional search terms that would help find relevant passages.
@@ -402,56 +273,10 @@ def generate_query_expansions_openai(query: str, query_type: str) -> List[str]:
         return unique_expansions[:15]  # Limit to 15 expansions to avoid overwhelming
         
     except Exception as e:
-        print(f"Error in OpenAI query expansion: {e}, falling back to simple expansion")
-        return generate_query_expansions_simple(query, query_type)
+        print(f"Error in OpenAI query expansion: {e}, returning original query only")
+        return [query]
 
-def generate_query_expansions_simple(query: str, query_type: str) -> List[str]:
-    """Simple fallback query expansion using basic patterns."""
-    expansions = [query]
-    entities = extract_entities_from_query_regex(query)
-    
-    # Add basic entity expansions
-    for family in entities["families"]:
-        expansions.extend([family, f"{family} family"])
-    
-    for person in entities["persons"]:
-        expansions.append(person)
-    
-    for place in entities["places"]:
-        expansions.append(place)
-    
-    for date in entities["dates"]:
-        expansions.extend([f"in {date}", f"during {date}"])
-    
-    # Add settlement-related expansions
-    for term in entities.get("settlement_terms", []):
-        expansions.extend([term, f"early {term}", f"first {term}"])
-    
-    # Add type-specific terms
-    if query_type == "when":
-        expansions.extend(["date", "year", "time", "when", "arrival", "settlement", "founding"])
-    elif query_type == "company":
-        expansions.extend(["company", "corporation", "business"])
-    elif query_type == "person":
-        expansions.extend(["person", "individual", "man", "woman"])
-    
-    # Add settlement-specific expansions for temporal queries
-    if query_type == "when" and any(term in query.lower() for term in ["settler", "arriv", "found", "establish"]):
-        expansions.extend([
-            "settlers arrival", "early settlers", "first settlers", 
-            "settlement history", "founding years", "establishment",
-            "immigration", "colonization", "settlement timeline"
-        ])
-    
-    # Remove duplicates
-    seen = set()
-    unique_expansions = []
-    for exp in expansions:
-        if exp.lower() not in seen:
-            seen.add(exp.lower())
-            unique_expansions.append(exp)
-    
-    return unique_expansions
+
 
 def generate_query_expansions(query: str, query_type: str) -> List[str]:
     """Main query expansion function - uses OpenAI with fallback."""
