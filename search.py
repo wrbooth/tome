@@ -58,7 +58,7 @@ def detect_query_type(query: str) -> str:
         - 'who': Questions asking about identity or role (e.g., "Who was the first president to...")
         - 'when': Questions about timing, dates, or years (e.g., "When did...", "What year...")
         - 'where': Questions about locations or places (e.g., "Where was...", "What was the old name for...")
-        - 'person': Questions about specific individuals, their actions, or personal history (e.g., "Was John Glenn ever in combat?", "Did the Naftal family arrive...")
+        - 'person': Questions about specific individuals, their actions, or personal history (e.g., "Was [person] ever in combat?", "Did the [family] arrive...")
         - 'company': Questions about businesses, organizations, corporations, or institutions (e.g., "What company built...", "What was the name of the company...")
         - 'factoid': Questions about specific facts, events, or details (e.g., "What had the men done...", "What was the name of...")
         - 'general': General information requests that don't fit other categories
@@ -103,9 +103,9 @@ def extract_person_from_query(query: str) -> Optional[str]:
         
         Examples:
         - "Who was the first president to..." -> "first president"
-        - "Was John Glenn ever in combat?" -> "John Glenn"
-        - "Did the Naftal family arrive..." -> "Naftal family"
-        - "What did Thomas Jefferson do?" -> "Thomas Jefferson"
+        - "Was [person] ever in combat?" -> "[person]"
+        - "Did the [family] arrive..." -> "[family]"
+        - "What did [person] do?" -> "[person]"
         
         Return only the person name, nothing else. If no specific person is mentioned, return "none"."""
         
@@ -151,26 +151,26 @@ def extract_entities_from_query(query: str) -> Dict[str, List[str]]:
         system_prompt = """You are an entity extractor for a historical document search system.
         Extract entities from the query and categorize them into the following types:
         
-        - persons: Individual people mentioned (e.g., "John Glenn", "Thomas Jefferson")
-        - places: Locations, cities, counties, states, countries (e.g., "Guernsey County", "Cambridge", "Ohio")
-        - events: Historical events or incidents (e.g., "Morgan's raid", "Civil War")
-        - dates: Years, decades, centuries mentioned (e.g., "1806", "1700s", "19th century")
-        - families: Family names or groups (e.g., "Naftal family", "McDonald family")
-        - companies: Businesses, organizations, corporations (e.g., "Cambridge Iron and Steel Company")
+        - persons: Individual people mentioned (e.g., "[person name]", "[historical figure]")
+        - places: Locations, cities, counties, states, countries (e.g., "[county name]", "[city name]", "[state name]")
+        - events: Historical events or incidents (e.g., "[event name]", "[historical incident]")
+        - dates: Years, decades, centuries mentioned (e.g., "[year]", "[decade]s", "[century] century")
+        - families: Family names or groups (e.g., "[family name] family", "[surname] family")
+        - companies: Businesses, organizations, corporations (e.g., "[company name]", "[organization name]")
         - industries: Industry types or sectors (e.g., "steel", "coal", "manufacturing")
         - settlement_terms: Terms related to settlement, immigration, arrival (e.g., "settlers", "arrived", "founded")
         
         IMPORTANT: 
         1. For temporal queries asking "what years", "when", or "what time", include relevant historical periods or timeframes that might be relevant for the search. For example, if asking about early settlers in the 1800s, include "1800s" or "19th century" in dates. If the query asks about "early settlers" or "first settlers", this typically refers to the early 1800s (1800-1850) or 19th century.
-        2. For "who" questions about roles or positions (e.g., "first president", "first sitting president"), include relevant historical figures who might fit that description. For example, if asking about "first sitting president", consider including "James Monroe", "Andrew Jackson", "George Washington" as these were early presidents.
+        2. For "who" questions about roles or positions (e.g., "first president", "first sitting president"), include relevant historical figures who might fit that description. For example, if asking about "first sitting president", consider including early presidents who might fit that description.
         
         Return a JSON object with these categories as keys and arrays of extracted entities as values.
         Example:
         {
-            "persons": ["John Glenn"],
-            "places": ["Guernsey County"],
+            "persons": ["[person name]"],
+            "places": ["[location name]"],
             "events": [],
-            "dates": ["1806", "1807"],
+            "dates": ["[year]", "[year]"],
             "families": [],
             "companies": [],
             "industries": [],
@@ -233,10 +233,10 @@ def generate_query_expansions_openai(query: str, query_type: str) -> List[str]:
         3. Include broader and narrower terms
         4. Add historical context terms
         5. Include alternative phrasings
-        6. ALWAYS include key entity combinations (e.g., "Guernsey settlers" for queries about Guernsey settlers)
+        6. ALWAYS include key entity combinations (e.g., "[location] settlers" for queries about settlers from a specific location)
         7. For temporal queries about settlers/immigration, include terms like "settlers", "immigration", "arrival", "founding"
-        8. For "who" questions about roles or positions, focus on the role/position terms and avoid geographic confusion (e.g., for "president visiting Cambridge", focus on "president", "visit", "Cambridge" not "Cambridge University")
-        9. Be specific to the context - if asking about Cambridge, Ohio, avoid terms that would match Cambridge, Massachusetts or Cambridge University
+        8. For "who" questions about roles or positions, focus on the role/position terms and avoid geographic confusion (e.g., for "president visiting [city]", focus on "president", "visit", "[city]" not "[city] University")
+        9. Be specific to the context - if asking about a specific city, avoid terms that would match other cities with the same name
         10. For questions about "first" or "first sitting" president, include terms like "early presidents", "first president", "presidential visits", "president travel"
         
         Return only the search terms, one per line, without numbering or explanations.
