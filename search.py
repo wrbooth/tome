@@ -237,7 +237,7 @@ def generate_query_expansions_openai(query: str, query_type: str) -> List[str]:
         7. For temporal queries about settlers/immigration, include terms like "settlers", "immigration", "arrival", "founding"
         8. For "who" questions about roles or positions, focus on the role/position terms and avoid geographic confusion (e.g., for "president visiting [city]", focus on "president", "visit", "[city]" not "[city] University")
         9. Be specific to the context - if asking about a specific city, avoid terms that would match other cities with the same name
-        10. For questions about "first" or "first sitting" president, include terms like "early presidents", "first president", "presidential visits", "president travel"
+        10. For questions about "first" or pioneering individuals in roles/positions, include terms about early examples, role-specific visits, and historical precedents
         
         Return only the search terms, one per line, without numbering or explanations.
         Start with the original query, then add expansions."""
