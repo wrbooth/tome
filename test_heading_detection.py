@@ -65,7 +65,7 @@ def test_pdf_extraction(file_path):
                 for heading in headings[:5]:  # Show first 5 headings
                     method = heading.get('detection_method', 'unknown')
                     level = heading.get('level', '?')
-                    text = heading.get('text', '')
+                    text = heading.get('text', heading.get('title', ''))
                     print(f"    Level {level} ({method}): {text}")
         
     except Exception as e:
@@ -91,7 +91,7 @@ def test_txt_extraction(file_path):
             for heading in headings[:5]:  # Show first 5 headings
                 method = heading.get('detection_method', 'unknown')
                 level = heading.get('level', '?')
-                text = heading.get('text', '')
+                text = heading.get('text', heading.get('title', ''))
                 print(f"    Level {level} ({method}): {text}")
         
     except Exception as e:
@@ -112,9 +112,8 @@ def test_chunking(file_path):
         else:
             pages = extract_text_from_txt(file_path)
         
-        # Merge heading detection
-        is_pdf = file_path.lower().endswith('.pdf')
-        pages = merge_heading_detection(pages, is_pdf=is_pdf)
+        # For PDFs, the advanced heading detection is already done in extract_text_with_font_info
+        # No need to run merge_heading_detection as it's already integrated
         
         # Show debug info
         debug_headings(pages, max_pages=2)
