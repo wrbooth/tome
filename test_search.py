@@ -18,7 +18,7 @@ from datetime import datetime
 class TestQuestion:
     """Represents a test question with expected results."""
     question: str
-    expected_page: int
+    expected_pages: List[int]
     expected_answer: str
     description: str
 
@@ -92,19 +92,19 @@ def parse_search_results(output: str) -> List[Dict]:
     
     return results
 
-def find_page_in_results(results: List[Dict], expected_page: int) -> Optional[Dict]:
-    """Find a specific page in the search results."""
+def find_page_in_results(results: List[Dict], expected_pages: List[int]) -> Optional[Dict]:
+    """Find any of the expected pages in the search results."""
     for result in results:
-        if result["page"] == expected_page:
+        if result["page"] in expected_pages:
             return result
     return None
 
 def evaluate_search_performance(question: TestQuestion, results: List[Dict]) -> Dict:
     """Evaluate the performance of a search for a specific question."""
-    expected_page = question.expected_page
+    expected_pages = question.expected_pages
     
-    # Special case: expected_page=None means the information is not in the book
-    if expected_page is None:
+    # Special case: expected_pages=None or empty means the information is not in the book
+    if expected_pages is None or len(expected_pages) == 0:
         # For questions where the answer is "No" or information is not available,
         # we expect that the search should not find relevant pages
         # This is a special case that needs manual evaluation
@@ -115,19 +115,21 @@ def evaluate_search_performance(question: TestQuestion, results: List[Dict]) -> 
             "status": "SPECIAL CASE - Information not expected to be in book"
         }
     
-    # Find the expected page in results
-    page_result = find_page_in_results(results, expected_page)
+    # Find any of the expected pages in results
+    page_result = find_page_in_results(results, expected_pages)
     
     if page_result is None:
+        pages_str = ", ".join(map(str, expected_pages))
         return {
             "found": False,
             "rank": None,
             "score": None,
-            "status": "FAILED - Expected page not found in top results"
+            "status": f"FAILED - Expected pages {pages_str} not found in top results"
         }
     
     rank = page_result["rank"]
     score = page_result["score"]
+    found_page = page_result["page"]
     
     # Determine status based on rank
     if rank <= 3:
@@ -143,7 +145,7 @@ def evaluate_search_performance(question: TestQuestion, results: List[Dict]) -> 
         "found": True,
         "rank": rank,
         "score": score,
-        "status": f"{status} - Page {expected_page} found at rank {rank}"
+        "status": f"{status} - Page {found_page} found at rank {rank}"
     }
 
 def run_single_test(test_data: Tuple[int, TestQuestion]) -> Dict:
@@ -240,7 +242,11 @@ def print_test_results(test_results: List[Dict]):
         evaluation = result["evaluation"]
         
         print(f"{result['test_num']}. {question.question}")
-        print(f"   Expected: Page {question.expected_page} - {question.expected_answer}")
+        if question.expected_pages:
+            pages_str = ", ".join(map(str, question.expected_pages))
+            print(f"   Expected: Pages {pages_str} - {question.expected_answer}")
+        else:
+            print(f"   Expected: Not in book - {question.expected_answer}")
         print(f"   Result: {evaluation['status']}")
         
         if evaluation["found"]:
@@ -255,106 +261,124 @@ def main():
     test_questions = [
         TestQuestion(
             question="When did the McDonald military expedition cross Guernsey County?",
-            expected_page=15,
+            expected_pages=[15],
             expected_answer="1774",
             description="Military expedition timing"
         ),
         TestQuestion(
             question="What had the men involved in the Wills Creek Incident done that caused the Indians to come after them?",
-            expected_page=55,
+            expected_pages=[55],
             expected_answer="They stole 15 horses from the Indians.",
             description="Wills Creek Incident cause"
         ),
         TestQuestion(
             question="In what years did the early settlers from the Isle of Guernsey arrive in Guernsey County?",
-            expected_page=29,
+            expected_pages=[29],
             expected_answer="1806 and 1807",
             description="Guernsey settlers arrival years"
         ),
         TestQuestion(
             question="Did the Naftal family arrive in Cambridge in 1806?",
-            expected_page=29,
+            expected_pages=[29],
             expected_answer="No.",
             description="Naftal family arrival verification"
         ),
         TestQuestion(
             question="What was the name of the company that built Cambridge's steel mill?",
-            expected_page=50,
+            expected_pages=[50],
             expected_answer="The Cambridge Iron and Steel Company",
             description="Steel mill company identification"
         ),
         TestQuestion(
             question="When did Cambridge get its second major railroad going north and south?",
-            expected_page=43,
+            expected_pages=[43],
             expected_answer="1873",
             description="Cambridge railroad expansion"
         ),
         TestQuestion(
             question="What was the old name for Maysville, Kentucky, in the 1700s?",
-            expected_page=19,
+            expected_pages=[19],
             expected_answer="Limestone",
             description="Maysville historical name"
         ),
         TestQuestion(
             question="When did Morgan's raid reach Cumberland?",
-            expected_page=45,
+            expected_pages=[45],
             expected_answer="July 23, 1863",
             description="Morgan's raid timing"
         ),
 
         TestQuestion(
             question="What can you tell me about an army hospital built near Cambridge?",
-            expected_page=51,
+            expected_pages=[51],
             expected_answer="the Fletcher General Hospital story",
             description="Army hospital information"
         ),
         TestQuestion(
             question="When and where did glass manufacturing start in Guernsey County?",
-            expected_page=50,
+            expected_pages=[50],
             expected_answer="1884, in Quaker City",
             description="Glass manufacturing history"
         ),
         TestQuestion(
             question="When did Cambridge's steel mill go out of business?",
-            expected_page=50,
+            expected_pages=[50],
             expected_answer="in the 1940s",
             description="Steel mill closure"
         ),
         TestQuestion(
             question="Who were the main historians of Guernsey County?",
-            expected_page=9,
+            expected_pages=[9],
             expected_answer="main historians of Guernsey County",
             description="County historians identification"
         ),
         TestQuestion(
             question="When did Congress authorize building the National Road?",
-            expected_page=38,
+            expected_pages=[38],
             expected_answer="1802",
             description="National Road authorization"
         ),
         TestQuestion(
             question="Did any of the founders of Cambridge participate in the Revolutionary War?",
-            expected_page=27,
+            expected_pages=[27],
             expected_answer="Jacob Gomber did",
             description="Cambridge founders Revolutionary War participation"
         ),
         TestQuestion(
             question="Who was the first sitting president to pass through Cambridge?",
-            expected_page=58,
+            expected_pages=[58],
             expected_answer="James Monroe",
             description="First president to visit Cambridge"
         ),
         TestQuestion(
             question="Who built the Colonial Theater, and when?",
-            expected_page=92,
+            expected_pages=[92],
             expected_answer="not clear who built it, but it came to be around 1901",
             description="Colonial Theater construction"
         ),
         TestQuestion(
             question="Was John Glenn ever in combat?",
-            expected_page=51,
+            expected_pages=[51],
             expected_answer="Yes.",
             description="John Glenn combat experience"
+        ),
+        TestQuestion(
+            question="What sort of things did Morgan's Raiders steal?",
+            expected_pages=[62, 63, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77],
+            expected_answer="lots of things, but especially horses",
+            description="Morgan's Raiders stolen items"
+        ),
+        TestQuestion(
+            question="Whose farm did the army take over to build Fletcher General Hospital?",
+            expected_pages=[],
+            expected_answer="not mentioned in the book; other books may mention it was the Oldham farm",
+            description="Fletcher General Hospital farm ownership"
+        ),
+        TestQuestion(
+            question="Did Morgan's Raid pass through Byesville?",
+            expected_pages=[],
+            expected_answer="not on route mentioned in the book; No.",
+            description="Morgan's Raid route through Byesville"
         )
     ]
     
