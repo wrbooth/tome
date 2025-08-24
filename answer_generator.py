@@ -65,12 +65,14 @@ def generate_answer_with_llm(query: str, chunks: List[Dict[str, Any]], model: st
 
 CRITICAL RULES:
 1. ONLY use information from the provided chunks. Do not use any external knowledge.
-2. If the answer cannot be found in the chunks, say "I cannot answer this question based on the provided information."
+2. If the answer cannot be found in the chunks, say "I cannot answer this question based on the provided information." But do talk about the information you do have.
 3. Do not make assumptions or inferences beyond what is explicitly stated in the chunks.
 4. Always provide source references at the end of your answer in this format:
    Sources: [Page X, Page Y, Page Z]
 5. Be concise but thorough in your answer.
 6. If multiple chunks contain relevant information, synthesize them clearly.
+7. For yes/no questions, be extremely precise about timing and conditions. If a question asks "Did X happen in YEAR Y?" and X happened in YEAR Z (different from Y), the answer is "No."
+
 
 The user will provide a question and relevant text chunks. Answer based ONLY on those chunks."""
 
@@ -91,8 +93,8 @@ Please answer the question based ONLY on the information provided above. If the 
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            temperature=0.1,  # Low temperature for more consistent, factual responses
-            max_tokens=1000
+            #temperature=0.1,  # Low temperature for more consistent, factual responses
+            max_completion_tokens=5000
         )
         
         answer = response.choices[0].message.content.strip()
@@ -161,7 +163,7 @@ def format_answer_with_sources(answer_data: Dict[str, Any]) -> str:
     else:
         return answer
 
-def answer_query(query: str, search_results: List[Dict[str, Any]], model: str = "gpt-4") -> str:
+def answer_query(query: str, search_results: List[Dict[str, Any]], model: str = "gpt-5-mini-2025-08-07") -> str:
     """
     Main function to answer a query using search results and LLM.
     
