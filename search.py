@@ -655,14 +655,26 @@ def format_results(results: List[Dict[str, Any]], scores: Dict[str, float]) -> s
     return '\n'.join(output)
 
 def generate_answer(query: str, query_type: str, results: List[Dict[str, Any]]) -> str:
-    """Generate a simple answer summary from search results."""
+    """Generate an LLM-based answer from search results."""
     if not results:
         return "I couldn't find any relevant information to answer your question."
     
-    # For now, just return the top result as a snippet
-    # This will be replaced by LLM processing later
-    top_result = results[0]
-    return f"Top result: {top_result['text'][:300]}... (Source: p. {top_result['page']})"
+    try:
+        # Import the answer generator
+        from answer_generator import answer_query
+        
+        # Generate answer using LLM
+        answer = answer_query(query, results)
+        return answer
+        
+    except ImportError:
+        # Fallback to simple answer if LLM module not available
+        top_result = results[0]
+        return f"Top result: {top_result['text'][:300]}... (Source: p. {top_result['page']})"
+    except Exception as e:
+        # Fallback to simple answer if LLM fails
+        top_result = results[0]
+        return f"Top result: {top_result['text'][:300]}... (Source: p. {top_result['page']})\n\nNote: LLM answer generation failed: {str(e)}"
 
 @click.command()
 @click.option('--q', 'query', required=True, help='Search query')

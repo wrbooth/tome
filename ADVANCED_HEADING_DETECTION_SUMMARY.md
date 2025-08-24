@@ -122,6 +122,9 @@ This document summarizes the implementation of advanced heading extraction funct
 3. **`test_advanced_headings.py`**: Comprehensive test script
 4. **`test_heading_detection.py`**: Updated for new format compatibility
 5. **`reingest_clean.py`**: Automated script for clean re-ingestion process
+6. **`answer_generator.py`**: LLM-based answer generation system
+7. **`search.py`**: Integrated LLM answer generation
+8. **`test_llm_answers.py`**: Test script for LLM answer generation
 
 ## Usage Examples
 
@@ -171,12 +174,19 @@ poetry run python ingest.py data/document.pdf --debug
 - **Reduced noise significantly**: Filtered to level 1 headings only, reducing from 289 to 236 total
 - **Better quality headings**: Much cleaner search results with focused heading context
 
+### LLM Answer Generation
+- **Strict source adherence**: LLM only uses information from provided search chunks
+- **Honest uncertainty**: Says when answer is not available in the chunks
+- **Source attribution**: Provides page numbers and references for all answers
+- **Intelligent synthesis**: Combines information from multiple chunks coherently
+
 ### Enhanced Functionality
 - **Robust TOC parsing**: Handles historical document format where titles and page numbers are on separate lines
 - **Smart filtering**: Removes page numbers and formatting artifacts
 - **Level 1 heading focus**: Reduces noise by filtering to only major headings
 - **Improved search results**: Much cleaner heading context in search output
 - **Clean re-ingestion process**: Automated script to clear DB/MeiliSearch and re-ingest
+- **LLM answer generation**: Intelligent answer synthesis with strict source adherence
 
 ## Conclusion
 
