@@ -71,6 +71,20 @@ python batch_ingest.py data/ --metadata data/metadata.json
 python batch_ingest.py data/ --parallel 4
 ```
 
+### 5a. Complete Reset & Re-ingestion (Recommended)
+
+For a complete clean slate (clears database, Meilisearch, and re-ingests everything):
+
+```bash
+# Clear everything and re-ingest all documents
+python batch_reingest.py --all --clear-first
+
+# Or clear everything and re-ingest specific documents
+python batch_reingest.py data/document1.pdf data/document2.pdf --clear-first
+```
+
+This is the recommended approach when you need to start fresh or when Meilisearch indexing gets out of sync.
+
 ### 6. Generate Embeddings
 
 ```bash
@@ -153,6 +167,21 @@ Options:
   --parallel INT    Number of parallel processes (default: 1)
   --debug          Show debug information
   --output PATH    Save results to JSON file
+```
+
+### `batch_reingest.py`
+
+Complete reset and re-ingestion of documents (recommended for clean slate).
+
+```bash
+python batch_reingest.py [documents...] [options]
+
+Options:
+  --all            Re-ingest all documents in database
+  --clear-first    Clear database and Meilisearch before ingestion
+  --clear-docs     Comma-separated list of document IDs to clear
+  --skip-embedding Skip embedding generation
+  --debug          Show debug information
 ```
 
 ### `embed.py`
