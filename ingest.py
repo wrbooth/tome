@@ -357,7 +357,7 @@ def merge_heading_detection(pages: List[Dict[str, Any]], is_pdf: bool = True) ->
     print(f"Detected {total_headings} total headings across all pages")
     return pages
 
-def chunk_text_with_headings(pages: List[Dict[str, Any]], max_tokens: int = 300) -> List[Dict[str, Any]]:
+def chunk_text_with_headings(pages: List[Dict[str, Any]], max_tokens: int = 300, document_title: str = None) -> List[Dict[str, Any]]:
     """Chunk text while preserving heading hierarchy across pages."""
     chunks = []
     current_headings = []  # Track current heading path across pages
@@ -397,14 +397,18 @@ def chunk_text_with_headings(pages: List[Dict[str, Any]], max_tokens: int = 300)
             
             # If adding this paragraph would exceed max_tokens, save current chunk
             if current_tokens + para_tokens > max_tokens and current_chunk:
-                # Create heading prefix
-                heading_prefix = ""
+                # Create document and heading prefix
+                prefix_parts = []
+                if document_title:
+                    prefix_parts.append(document_title)
                 if chunk_headings:
-                    heading_prefix = " | ".join(chunk_headings) + " | "
+                    prefix_parts.extend(chunk_headings)
                 
-                # Save current chunk with heading prefix
+                prefix = " | ".join(prefix_parts) + " | " if prefix_parts else ""
+                
+                # Save current chunk with document and heading prefix
                 chunk_text = ' '.join(current_chunk)
-                full_text = heading_prefix + chunk_text
+                full_text = prefix + chunk_text
                 
                 chunks.append({
                     "page": page_num,
@@ -431,13 +435,17 @@ def chunk_text_with_headings(pages: List[Dict[str, Any]], max_tokens: int = 300)
         
         # Add final chunk for this page
         if current_chunk:
-            # Create heading prefix
-            heading_prefix = ""
+            # Create document and heading prefix
+            prefix_parts = []
+            if document_title:
+                prefix_parts.append(document_title)
             if chunk_headings:
-                heading_prefix = " | ".join(chunk_headings) + " | "
+                prefix_parts.extend(chunk_headings)
+            
+            prefix = " | ".join(prefix_parts) + " | " if prefix_parts else ""
             
             chunk_text = ' '.join(current_chunk)
-            full_text = heading_prefix + chunk_text
+            full_text = prefix + chunk_text
             
             chunks.append({
                 "page": page_num,
@@ -539,7 +547,7 @@ def store_passages(conn, doc_id: str, chunks: List[Dict[str, Any]]) -> List[str]
     conn.commit()
     return passage_ids
 
-def index_in_meilisearch(passages: List[Dict[str, Any]], passage_ids: List[str]):
+def index_in_meilisearch(passages: List[Dict[str, Any]], passage_ids: List[str], doc_id: str):
     """Index passages in Meilisearch."""
     try:
         from meilisearch import Client
@@ -561,6 +569,7 @@ def index_in_meilisearch(passages: List[Dict[str, Any]], passage_ids: List[str])
             
             documents.append({
                 "id": passage_id,
+                "document_id": doc_id,  # Add document_id for filtering
                 "text": passage["text"],  # Use prefixed text for search
                 "page": passage["page"],
                 "headings_path": passage["headings_path"],
@@ -573,7 +582,7 @@ def index_in_meilisearch(passages: List[Dict[str, Any]], passage_ids: List[str])
         index = client.index("passages")
         index.add_documents(documents)
         
-        print(f"Indexed {len(documents)} passages in Meilisearch")
+        print(f"Indexed {len(documents)} passages in Meilisearch for document {doc_id}")
         
     except ImportError:
         print("Warning: Meilisearch client not available")
@@ -1056,7 +1065,7 @@ def main(file_path: str, title: str, authors: str, pub_year: int, debug: bool):
     
     # Chunk the text
     print("Chunking text...")
-    chunks = chunk_text_with_headings(pages)
+    chunks = chunk_text_with_headings(pages, document_title=title)
     print(f"Created {len(chunks)} chunks")
     
     # Connect to database
@@ -1081,7 +1090,7 @@ def main(file_path: str, title: str, authors: str, pub_year: int, debug: bool):
     print(f"Stored {len(passage_ids)} passages")
     
     # Index in Meilisearch
-    index_in_meilisearch(chunks, passage_ids)
+    index_in_meilisearch(chunks, passage_ids, doc_id)
     
     conn.close()
     print("Ingestion complete!")

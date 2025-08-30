@@ -32,8 +32,9 @@ def format_chunks_for_llm(chunks: List[Dict[str, Any]]) -> str:
         page = chunk.get('page', 'Unknown')
         title = chunk.get('title', 'Unknown Document')
         
-        # Format each chunk
-        chunk_text = f"CHUNK {i} (Page {page}):\n{text}\n"
+        # The text already contains document title and headings in the prefix
+        # Format each chunk with additional context
+        chunk_text = f"CHUNK {i} (Document: {title}, Page {page}):\n{text}\n"
         formatted_chunks.append(chunk_text)
     
     return "\n".join(formatted_chunks)
@@ -68,10 +69,11 @@ CRITICAL RULES:
 2. If the answer cannot be found in the chunks, say "I cannot answer this question based on the provided information." But do talk about the information you do have.
 3. Do not make assumptions or inferences beyond what is explicitly stated in the chunks.
 4. Always provide source references at the end of your answer in this format:
-   Sources: [Page X, Page Y, Page Z]
+   Sources: [Document Title, Page X; Document Title, Page Y]
 5. Be concise but thorough in your answer.
 6. If multiple chunks contain relevant information, synthesize them clearly.
 7. For yes/no questions, be extremely precise about timing and conditions. If a question asks "Did X happen in YEAR Y?" and X happened in YEAR Z (different from Y), the answer is "No."
+8. When information comes from multiple documents, clearly indicate which document each piece of information comes from.
 
 
 The user will provide a question and relevant text chunks. Answer based ONLY on those chunks."""
@@ -115,29 +117,42 @@ Please answer the question based ONLY on the information provided above. If the 
             "confidence": "error"
         }
 
-def extract_source_pages(answer: str, chunks: List[Dict[str, Any]]) -> List[int]:
+def extract_source_pages(answer: str, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    Extract page numbers mentioned in the answer.
+    Extract source information mentioned in the answer.
     
     Args:
         answer: LLM-generated answer
         chunks: Original chunks used for generation
         
     Returns:
-        List of page numbers referenced
+        List of source dictionaries with title and page
     """
-    # Look for "Sources:" or "Page" mentions in the answer
+    # Look for "Sources:" mentions in the answer
     import re
     
-    # Extract page numbers from "Sources: [Page X, Page Y, Page Z]" format
+    # Extract sources from "Sources: [Document Title, Page X; Document Title, Page Y]" format
     sources_match = re.search(r'Sources:\s*\[(.*?)\]', answer, re.IGNORECASE)
     if sources_match:
-        pages_text = sources_match.group(1)
-        page_numbers = re.findall(r'Page\s+(\d+)', pages_text, re.IGNORECASE)
-        return [int(p) for p in page_numbers]
+        sources_text = sources_match.group(1)
+        # Parse "Document Title, Page X" format
+        sources = []
+        for source in sources_text.split(';'):
+            source = source.strip()
+            if ',' in source:
+                parts = source.split(',')
+                if len(parts) >= 2:
+                    title = parts[0].strip()
+                    page_match = re.search(r'Page\s+(\d+)', parts[1], re.IGNORECASE)
+                    if page_match:
+                        sources.append({
+                            'title': title,
+                            'page': int(page_match.group(1))
+                        })
+        return sources
     
-    # Fallback: return pages from chunks that were used
-    return list(set(chunk.get('page', 0) for chunk in chunks))
+    # Fallback: return sources from chunks that were used
+    return [{'title': chunk.get('title', 'Unknown'), 'page': chunk.get('page', 0)} for chunk in chunks]
 
 def format_answer_with_sources(answer_data: Dict[str, Any]) -> str:
     """
@@ -158,7 +173,12 @@ def format_answer_with_sources(answer_data: Dict[str, Any]) -> str:
     
     # Otherwise, add source information
     if sources:
-        source_text = ", ".join([f"Page {p}" for p in sorted(sources)])
+        if isinstance(sources[0], dict):
+            # New format with document titles
+            source_text = "; ".join([f"{s['title']}, Page {s['page']}" for s in sources])
+        else:
+            # Legacy format with just page numbers
+            source_text = ", ".join([f"Page {p}" for p in sorted(sources)])
         return f"{answer}\n\nSources: {source_text}"
     else:
         return answer

@@ -328,7 +328,8 @@ def evaluate_search_performance(question: TestQuestion, results: List[Dict], llm
             "found": False,
             "rank": None,
             "score": None,
-            "status": f"FAILED - Expected pages {pages_str} not found in top results"
+            "chunk_status": f"FAILED - Expected pages {pages_str} not found in top results",
+            "answer_status": "NO ANSWER"
         }
     
     rank = page_result["rank"]
@@ -387,7 +388,8 @@ def run_single_test(test_data: Tuple[int, TestQuestion], delay: float = 1.0) -> 
                 "found": False,
                 "rank": None,
                 "score": None,
-                "status": f"ERROR - {search_result['error']}"
+                "chunk_status": f"ERROR - {search_result['error']}",
+                "answer_status": "NO ANSWER"
             }
         }
     
@@ -404,7 +406,8 @@ def run_single_test(test_data: Tuple[int, TestQuestion], delay: float = 1.0) -> 
                 "found": False,
                 "rank": None,
                 "score": None,
-                "status": "ERROR - No results parsed"
+                "chunk_status": "ERROR - No results parsed",
+                "answer_status": "NO ANSWER"
             }
         }
     
@@ -668,7 +671,8 @@ def main():
                         "found": False,
                         "rank": None,
                         "score": None,
-                        "status": f"ERROR - Exception: {exc}"
+                        "chunk_status": f"ERROR - Exception: {exc}",
+                        "answer_status": "NO ANSWER"
                     }
                 })
     else:
@@ -705,7 +709,8 @@ def main():
                             "found": False,
                             "rank": None,
                             "score": None,
-                            "status": f"ERROR - Exception: {exc}"
+                            "chunk_status": f"ERROR - Exception: {exc}",
+                            "answer_status": "NO ANSWER"
                         }
                     })
     

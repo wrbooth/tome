@@ -83,15 +83,23 @@ def get_local_embeddings(texts: List[str], model_name: str = "intfloat/e5-base-v
         print(f"Error getting local embeddings: {e}")
         return []
 
-def get_unembedded_passages(conn, limit: int = 1000) -> List[Dict[str, Any]]:
+def get_unembedded_passages(conn, limit: int = 1000, document_id: Optional[str] = None) -> List[Dict[str, Any]]:
     """Get passages that don't have embeddings yet."""
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("""
-            SELECT id, text FROM passages 
-            WHERE embedding IS NULL 
-            ORDER BY id 
-            LIMIT %s
-        """, (limit,))
+        if document_id:
+            cur.execute("""
+                SELECT id, text FROM passages 
+                WHERE embedding IS NULL AND document_id = %s
+                ORDER BY id 
+                LIMIT %s
+            """, (document_id, limit))
+        else:
+            cur.execute("""
+                SELECT id, text FROM passages 
+                WHERE embedding IS NULL 
+                ORDER BY id 
+                LIMIT %s
+            """, (limit,))
         return cur.fetchall()
 
 def update_passage_embeddings(conn, passage_embeddings: List[tuple]):
@@ -119,7 +127,9 @@ def validate_embedding_dimension(embedding: List[float], expected_dim: int = 102
               help='Batch size for processing')
 @click.option('--limit', default=1000, type=int, 
               help='Maximum number of passages to process')
-def main(provider: str, model: str, batch_size: int, limit: int):
+@click.option('--doc', 'document_id', help='Process only specific document ID')
+@click.option('--documents', help='Comma-separated list of document IDs')
+def main(provider: str, model: str, batch_size: int, limit: int, document_id: Optional[str], documents: Optional[str]):
     """Generate embeddings for passages that don't have them yet."""
     
     # Connect to database
@@ -130,8 +140,23 @@ def main(provider: str, model: str, batch_size: int, limit: int):
         print(f"Error connecting to database: {e}")
         sys.exit(1)
     
+    # Handle document filtering
+    target_document_ids = []
+    if document_id:
+        target_document_ids = [document_id]
+    elif documents:
+        target_document_ids = [doc_id.strip() for doc_id in documents.split(',')]
+    
     # Get unembedded passages
-    passages = get_unembedded_passages(conn, limit)
+    if target_document_ids:
+        print(f"Processing documents: {', '.join(target_document_ids)}")
+        all_passages = []
+        for doc_id in target_document_ids:
+            doc_passages = get_unembedded_passages(conn, limit, doc_id)
+            all_passages.extend(doc_passages)
+        passages = all_passages[:limit]  # Respect overall limit
+    else:
+        passages = get_unembedded_passages(conn, limit)
     
     if not passages:
         print("No passages found without embeddings")

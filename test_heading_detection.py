@@ -119,7 +119,8 @@ def test_chunking(file_path):
         debug_headings(pages, max_pages=2)
         
         # Chunk the text
-        chunks = chunk_text_with_headings(pages, max_tokens=300)  # Smaller chunks for testing
+        document_title = os.path.basename(file_path)
+        chunks = chunk_text_with_headings(pages, max_tokens=300, document_title=document_title)  # Smaller chunks for testing
         
         print(f"\nCreated {len(chunks)} chunks")
         

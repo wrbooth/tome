@@ -482,6 +482,7 @@ def apply_query_boosting(candidates: List[Tuple[str, float]], query: str, conn) 
                             break
                 
                 # Also check for any years in the passage (weaker boost)
+                year_count = 0  # Initialize year_count
                 if boost_multiplier == 1.0:  # Only if no exact match found
                     cur.execute("""
                         SELECT COUNT(*) FROM passage_years 
@@ -640,6 +641,10 @@ def format_results(results: List[Dict[str, Any]], scores: Dict[str, float]) -> s
     """Format search results for display."""
     output = []
     
+    # Check if we have multiple documents
+    document_titles = set(result.get('title', 'Unknown') for result in results)
+    multi_document = len(document_titles) > 1
+    
     for i, result in enumerate(results, 1):
         passage_id = result['id']
         score = scores.get(passage_id, 0.0)
@@ -650,7 +655,11 @@ def format_results(results: List[Dict[str, Any]], scores: Dict[str, float]) -> s
         text = result['text']
         snippet = text[:200] + "..." if len(text) > 200 else text
         
-        output.append(f"{i:2d}  {score:.3f}  {title}  p. {page}  \"{snippet}\"")
+        # Show document title more prominently in multi-document scenarios
+        if multi_document:
+            output.append(f"{i:2d}  {score:.3f}  [{title}]  p. {page}  \"{snippet}\"")
+        else:
+            output.append(f"{i:2d}  {score:.3f}  {title}  p. {page}  \"{snippet}\"")
     
     return '\n'.join(output)
 
@@ -670,11 +679,13 @@ def generate_answer(query: str, query_type: str, results: List[Dict[str, Any]]) 
     except ImportError:
         # Fallback to simple answer if LLM module not available
         top_result = results[0]
-        return f"Top result: {top_result['text'][:300]}... (Source: p. {top_result['page']})"
+        title = top_result.get('title', 'Unknown Document')
+        return f"Top result: {top_result['text'][:300]}... (Source: {title}, p. {top_result['page']})"
     except Exception as e:
         # Fallback to simple answer if LLM fails
         top_result = results[0]
-        return f"Top result: {top_result['text'][:300]}... (Source: p. {top_result['page']})\n\nNote: LLM answer generation failed: {str(e)}"
+        title = top_result.get('title', 'Unknown Document')
+        return f"Top result: {top_result['text'][:300]}... (Source: {title}, p. {top_result['page']})\n\nNote: LLM answer generation failed: {str(e)}"
 
 @click.command()
 @click.option('--q', 'query', required=True, help='Search query')

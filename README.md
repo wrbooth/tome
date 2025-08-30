@@ -5,11 +5,13 @@ A proof-of-concept system for ingesting documents, chunking them correctly, inde
 ## Features
 
 - **Document Ingestion**: PDF and TXT file support with text extraction
+- **Multi-Document Support**: Batch ingestion, document management, and filtering
 - **Smart Chunking**: 800-1200 token chunks with page boundary respect
 - **Hybrid Search**: BM25 (Meilisearch) + Vector similarity (pgvector) with RRF fusion
 - **Entity Extraction**: Named entities and years using spaCy NER
 - **Query Type Detection**: Specialized handling for "who is/was" and factoid queries
 - **Page-Aware Results**: Exact page numbers and citations
+- **Document Filtering**: Search within specific documents or across all documents
 
 ## Quick Start
 
@@ -56,14 +58,17 @@ MEILI_URL=http://localhost:7700
 OPENAI_API_KEY=your_openai_api_key_here
 ```
 
-### 5. Ingest a Document
+### 5. Ingest Documents
 
 ```bash
-# Ingest a PDF
+# Ingest a single document
 python ingest.py data/federalist.pdf --title "The Federalist Papers" --authors "Alexander Hamilton,James Madison,John Jay" --pub-year 1788
 
-# Ingest a TXT file
-python ingest.py data/constitution.txt --title "U.S. Constitution" --pub-year 1787
+# Ingest multiple documents (batch)
+python batch_ingest.py data/ --metadata data/metadata.json
+
+# Ingest with parallel processing
+python batch_ingest.py data/ --parallel 4
 ```
 
 ### 6. Generate Embeddings
@@ -89,6 +94,22 @@ python search.py --q "who was Publius" --k 10
 python search.py --q "separation of powers" --doc your_document_id --k 15
 ```
 
+### 8. Manage Documents
+
+```bash
+# List all documents
+python documents.py list
+
+# Get document details
+python documents.py info <document_id>
+
+# Delete a document
+python documents.py delete <document_id>
+
+# Get system statistics
+python documents.py stats
+```
+
 ## Architecture
 
 ### Services
@@ -108,7 +129,7 @@ python search.py --q "separation of powers" --doc your_document_id --k 15
 
 ### `ingest.py`
 
-Ingest documents and create passages.
+Ingest a single document and create passages.
 
 ```bash
 python ingest.py <file_path> [options]
@@ -117,6 +138,21 @@ Options:
   --title TEXT      Document title
   --authors TEXT    Comma-separated list of authors
   --pub-year INT    Publication year
+```
+
+### `batch_ingest.py`
+
+Ingest multiple documents with batch processing.
+
+```bash
+python batch_ingest.py <input_path> [options]
+
+Options:
+  --recursive       Process directories recursively
+  --metadata PATH   CSV/JSON file with document metadata
+  --parallel INT    Number of parallel processes (default: 1)
+  --debug          Show debug information
+  --output PATH    Save results to JSON file
 ```
 
 ### `embed.py`
@@ -131,6 +167,8 @@ Options:
   --model TEXT               Model name/path
   --batch-size INT           Batch size for processing
   --limit INT                Maximum passages to process
+  --doc TEXT                 Process only specific document ID
+  --documents TEXT           Comma-separated list of document IDs
 ```
 
 ### `search.py`
@@ -146,6 +184,27 @@ Options:
   --doc TEXT       Filter by document ID
 ```
 
+### `documents.py`
+
+Manage documents in the system.
+
+```bash
+# List all documents
+python documents.py list [--format table|json]
+
+# Get document details
+python documents.py info <document_id> [--format table|json]
+
+# Delete a document
+python documents.py delete <document_id> [--force]
+
+# Re-index document in Meilisearch
+python documents.py reindex <document_id>
+
+# Get system statistics
+python documents.py stats
+```
+
 ## Search Features
 
 ### Query Type Detection
@@ -153,6 +212,12 @@ Options:
 - **"who is/was" queries**: Boost passages with matching PERSON entities
 - **Factoid queries**: Special handling for place/time queries
 - **General queries**: Standard hybrid search
+
+### Document Filtering
+
+- **Filter by document**: Search within specific documents using `--doc` parameter
+- **Cross-document search**: Search across all documents (default)
+- **API support**: Document filtering available in FastAPI endpoints
 
 ### RRF Fusion
 
@@ -173,9 +238,15 @@ For "who is/was X" queries, passages containing PERSON entity "X" get a 1.5x sco
 
 - `documents`: Document metadata
 - `passages`: Text chunks with embeddings
-- `passage_entities`: Named entities per passage
-- `passage_years`: Years mentioned in passages
+- `passage_entities`: Named entities extracted from passages
+- `passage_years`: Years extracted from passages
 - `places`: Place normalization data
+
+### Multi-Document Support
+
+- **Document filtering**: All search operations support filtering by `document_id`
+- **Batch operations**: Support for processing multiple documents efficiently
+- **Document management**: Tools for listing, deleting, and managing documents
 
 ### Indexes
 
@@ -260,6 +331,10 @@ After POC validation:
 4. Expand entity extraction and normalization
 5. Build web interface
 6. Add caching and performance optimizations
+
+## Multi-Document Guide
+
+For detailed information about multi-document features, see [MULTI_DOCUMENT_GUIDE.md](MULTI_DOCUMENT_GUIDE.md).
 
 ## License
 
