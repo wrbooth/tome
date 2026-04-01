@@ -18,7 +18,7 @@ create table if not exists passages (
   char_end int,
   headings_path text[],
   text text not null,
-  embedding vector(768)
+  embedding vector(1536)
 );
 
 create table if not exists passage_entities (

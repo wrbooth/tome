@@ -27,7 +27,7 @@ def get_db_connection():
         password=os.getenv("DB_PASSWORD", "codex")
     )
 
-def get_openai_embeddings(texts: List[str], model: str = "text-embedding-3-large") -> List[List[float]]:
+def get_openai_embeddings(texts: List[str], model: str = "text-embedding-3-small") -> List[List[float]]:
     """Get embeddings from OpenAI API."""
     try:
         from openai import OpenAI
@@ -114,7 +114,7 @@ def update_passage_embeddings(conn, passage_embeddings: List[tuple]):
     
     conn.commit()
 
-def validate_embedding_dimension(embedding: List[float], expected_dim: int = 1024) -> bool:
+def validate_embedding_dimension(embedding: List[float], expected_dim: int = 1536) -> bool:
     """Validate that embedding has the expected dimension."""
     return len(embedding) == expected_dim
 

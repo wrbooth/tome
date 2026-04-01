@@ -52,14 +52,17 @@ async def search(request: SearchRequest):
         sys.path.append('..')
         
         from search import (
-            get_meili_candidates, 
-            get_vector_candidates, 
-            rrf, 
+            get_meili_candidates,
+            get_vector_candidates,
+            rrf,
             apply_query_boosting,
             get_passage_details,
-            detect_query_type
+            analyze_query
         )
-        
+
+        # Analyze query (single LLM call)
+        query_analysis = analyze_query(request.query)
+
         # Get candidates from both sources
         meili_candidates = get_meili_candidates(request.query, k=200, document_id=request.document_id)
         vector_candidates = get_vector_candidates(request.query, k=200, document_id=request.document_id)
@@ -85,7 +88,7 @@ async def search(request: SearchRequest):
         
         # Apply query-specific boosting
         conn = get_db_connection()
-        boosted_candidates = apply_query_boosting(top_candidates, request.query, conn)
+        boosted_candidates = apply_query_boosting(top_candidates, query_analysis, conn)
         
         # Get passage details
         passage_ids = [pid for pid, _ in boosted_candidates]

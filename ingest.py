@@ -580,7 +580,7 @@ def index_in_meilisearch(passages: List[Dict[str, Any]], passage_ids: List[str],
         
         # Create or update index
         index = client.index("passages")
-        index.add_documents(documents)
+        index.add_documents(documents, primary_key="id")
         
         print(f"Indexed {len(documents)} passages in Meilisearch for document {doc_id}")
         

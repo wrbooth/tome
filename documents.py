@@ -195,7 +195,7 @@ def reindex_document_meilisearch(conn, document_id: str) -> bool:
         # Index in Meilisearch
         client = Client(os.getenv("MEILI_URL", "http://localhost:7700"))
         index = client.index("passages")
-        index.add_documents(documents)
+        index.add_documents(documents, primary_key="id")
         
         print(f"Re-indexed {len(documents)} passages for document {document_id}")
         return True

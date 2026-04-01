@@ -38,249 +38,131 @@ def rrf(rank: int) -> float:
     """Reciprocal rank fusion score."""
     return 1.0 / (RRF_K + rank)
 
-def detect_query_type(query: str) -> str:
+def analyze_query(query: str) -> Dict[str, Any]:
     """
-    Use OpenAI to classify query type based on semantic understanding.
-    Returns: 'who', 'when', 'where', 'factoid', 'company', 'person', or 'general'
+    Analyze a query in a single LLM call using structured output.
+    Returns classification, entities, person name, and search expansions.
     """
+    default_result = {
+        "query_type": "general",
+        "person": None,
+        "entities": {
+            "persons": [], "places": [], "events": [], "dates": [],
+            "families": [], "companies": [], "industries": [], "settlement_terms": []
+        },
+        "expansions": [query]
+    }
+
     try:
-        # Ensure .env is loaded
         load_dotenv()
-        
-        # Check if OpenAI API key is available
         if not os.getenv('OPENAI_API_KEY'):
             print("Error: OPENAI_API_KEY not found in environment")
-            return 'general'
-        
-        system_prompt = """You are a query classifier for a historical document search system. 
-        Classify the query type based on what the user is asking for:
+            return default_result
 
-        - 'who': Questions asking about identity or role (e.g., "Who was the first president to...")
-        - 'when': Questions about timing, dates, or years (e.g., "When did...", "What year...")
-        - 'where': Questions about locations or places (e.g., "Where was...", "What was the old name for...")
-        - 'person': Questions about specific individuals, their actions, or personal history (e.g., "Was [person] ever in combat?", "Did the [family] arrive...")
-        - 'company': Questions about businesses, organizations, corporations, or institutions (e.g., "What company built...", "What was the name of the company...")
-        - 'factoid': Questions about specific facts, events, or details (e.g., "What had the men done...", "What was the name of...")
-        - 'general': General information requests that don't fit other categories
+        system_prompt = """You are a query analysis engine for a historical document search system.
+Given a user query, produce a JSON object with the following fields:
 
-        Return only the classification label, nothing else."""
+1. **query_type**: Classify the query as one of:
+   - "who": Questions asking about identity or role
+   - "when": Questions about timing, dates, or years
+   - "where": Questions about locations or places
+   - "person": Questions about specific individuals, their actions, or personal history
+   - "company": Questions about businesses, organizations, or institutions
+   - "factoid": Questions about specific facts, events, or details
+   - "general": General information requests that don't fit other categories
 
-        client = openai.OpenAI()
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Classify this query: {query}"}
-            ],
-            max_tokens=10,
-            temperature=0
-        )
-        
-        classification = response.choices[0].message.content.strip().lower()
-        
-        # Validate the classification
-        valid_types = ['who', 'when', 'where', 'factoid', 'company', 'person', 'general']
-        if classification in valid_types:
-            return classification
-        else:
-            print(f"Warning: Invalid classification '{classification}', using 'general'")
-            return 'general'
-            
-    except Exception as e:
-        print(f"Error in OpenAI classification: {e}, using 'general'")
-        return 'general'
+2. **person**: The name of the person being asked about. Use empty string if none.
+   Examples: "Who was the first president to..." → "first president"; "Was John Smith ever in combat?" → "John Smith"
 
-def extract_person_from_query(query: str) -> Optional[str]:
-    """Use OpenAI to extract person name from queries."""
-    try:
-        load_dotenv()
-        if not os.getenv('OPENAI_API_KEY'):
-            print("Warning: OPENAI_API_KEY not found, returning None")
-            return None
-        
-        system_prompt = """You are a person name extractor for a historical document search system.
-        Extract the name of the person being asked about in the query.
-        
-        Examples:
-        - "Who was the first president to..." -> "first president"
-        - "Was [person] ever in combat?" -> "[person]"
-        - "Did the [family] arrive..." -> "[family]"
-        - "What did [person] do?" -> "[person]"
-        
-        Return only the person name, nothing else. If no specific person is mentioned, return "none"."""
-        
-        client = openai.OpenAI()
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Extract person name from: {query}"}
-            ],
-            max_tokens=20,
-            temperature=0
-        )
-        
-        person = response.choices[0].message.content.strip()
-        if person.lower() == "none":
-            return None
-        return person
-        
-    except Exception as e:
-        print(f"Error in OpenAI person extraction: {e}, returning None")
-        return None
+3. **entities**: Extract entities into these categories:
+   - persons: Individual people mentioned
+   - places: Locations, cities, counties, states, countries
+   - events: Historical events or incidents
+   - dates: Years, decades, centuries (e.g., "1806", "1800s", "19th century")
+   - families: Family names or groups
+   - companies: Businesses, organizations, corporations
+   - industries: Industry types or sectors
+   - settlement_terms: Terms related to settlement, immigration, arrival
+   For temporal queries, include relevant historical periods. For "who" questions about roles, include relevant historical figures.
 
-def extract_entities_from_query(query: str) -> Dict[str, List[str]]:
-    """Use OpenAI to extract entities from query for expansion."""
-    entities = {
-        "persons": [],
-        "places": [],
-        "events": [],
-        "dates": [],
-        "families": [],
-        "companies": [],
-        "industries": [],
-        "settlement_terms": []
-    }
-    
-    try:
-        load_dotenv()
-        if not os.getenv('OPENAI_API_KEY'):
-            print("Warning: OPENAI_API_KEY not found, returning empty entities")
-            return entities
-        
-        system_prompt = """You are an entity extractor for a historical document search system.
-        Extract entities from the query and categorize them into the following types:
-        
-        - persons: Individual people mentioned (e.g., "[person name]", "[historical figure]")
-        - places: Locations, cities, counties, states, countries (e.g., "[county name]", "[city name]", "[state name]")
-        - events: Historical events or incidents (e.g., "[event name]", "[historical incident]")
-        - dates: Years, decades, centuries mentioned (e.g., "[year]", "[decade]s", "[century] century")
-        - families: Family names or groups (e.g., "[family name] family", "[surname] family")
-        - companies: Businesses, organizations, corporations (e.g., "[company name]", "[organization name]")
-        - industries: Industry types or sectors (e.g., "steel", "coal", "manufacturing")
-        - settlement_terms: Terms related to settlement, immigration, arrival (e.g., "settlers", "arrived", "founded")
-        
-        IMPORTANT: 
-        1. For temporal queries asking "what years", "when", or "what time", include relevant historical periods or timeframes that might be relevant for the search. For example, if asking about early settlers in the 1800s, include "1800s" or "19th century" in dates. If the query asks about "early settlers" or "first settlers", this typically refers to the early 1800s (1800-1850) or 19th century.
-        2. For "who" questions about roles or positions (e.g., "first president", "first sitting president"), include relevant historical figures who might fit that description. For example, if asking about "first sitting president", consider including early presidents who might fit that description.
-        
-        Return a JSON object with these categories as keys and arrays of extracted entities as values.
-        Example:
-        {
-            "persons": ["[person name]"],
-            "places": ["[location name]"],
-            "events": [],
-            "dates": ["[year]", "[year]"],
-            "families": [],
-            "companies": [],
-            "industries": [],
-            "settlement_terms": ["settlers", "arrived"]
-        }
-        
-        Only include categories that have entities. If a category is empty, omit it from the JSON."""
-        
-        client = openai.OpenAI()
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Extract entities from: {query}"}
-            ],
-            max_tokens=300,
-            temperature=0
-        )
-        
-        try:
-            extracted_entities = json.loads(response.choices[0].message.content.strip())
-            
-            # Update our entities dict with extracted values
-            for category, values in extracted_entities.items():
-                if category in entities and isinstance(values, list):
-                    entities[category].extend(values)
-            
-            return entities
-            
-        except json.JSONDecodeError as e:
-            print(f"Error parsing OpenAI entity extraction JSON: {e}, returning empty entities")
-            return entities
-        
-    except Exception as e:
-        print(f"Error in OpenAI entity extraction: {e}, returning empty entities")
-        return entities
-
-
-
-def generate_query_expansions_openai(query: str, query_type: str) -> List[str]:
-    """Use OpenAI to generate contextually relevant query expansions."""
-    try:
-        # Ensure .env is loaded
-        load_dotenv()
-        
-        # Check if OpenAI API key is available
-        if not os.getenv('OPENAI_API_KEY'):
-            print("Warning: OPENAI_API_KEY not found, returning original query only")
-            return [query]
-        
-        system_prompt = f"""You are a query expansion expert for a historical document search system. 
-        Given a query and its type, generate 5-10 additional search terms that would help find relevant passages.
-        
-        Query type: {query_type}
-        Original query: "{query}"
-        
-        Generate search terms that:
-        1. Include synonyms and related concepts
-        2. Add specific names, dates, or places mentioned or implied
-        3. Include broader and narrower terms
-        4. Add historical context terms
-        5. Include alternative phrasings
-        6. ALWAYS include key entity combinations (e.g., "[location] settlers" for queries about settlers from a specific location)
-        7. For temporal queries about settlers/immigration, include terms like "settlers", "immigration", "arrival", "founding"
-        8. For "who" questions about roles or positions, focus on the role/position terms and avoid geographic confusion (e.g., for "president visiting [city]", focus on "president", "visit", "[city]" not "[city] University")
-        9. Be specific to the context - if asking about a specific city, avoid terms that would match other cities with the same name
-        10. For questions about "first" or pioneering individuals in roles/positions, include terms about early examples, role-specific visits, and historical precedents
-        
-        Return only the search terms, one per line, without numbering or explanations.
-        Start with the original query, then add expansions."""
+4. **expansions**: 5-10 additional search terms to help find relevant passages. Include:
+   - Synonyms and related concepts
+   - Specific names, dates, or places mentioned or implied
+   - Broader and narrower terms
+   - Historical context terms
+   - Alternative phrasings
+   - Key entity combinations (e.g., "[location] settlers")
+   For "who" questions about roles, focus on role/position terms. Be specific to context."""
 
         client = openai.OpenAI()
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Generate search expansions for: {query}"}
+                {"role": "user", "content": query}
             ],
-            max_tokens=200,
-            temperature=0
+            temperature=0,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "query_analysis",
+                    "strict": True,
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "query_type": {
+                                "type": "string",
+                                "enum": ["who", "when", "where", "person", "company", "factoid", "general"]
+                            },
+                            "person": {"type": "string"},
+                            "entities": {
+                                "type": "object",
+                                "properties": {
+                                    "persons": {"type": "array", "items": {"type": "string"}},
+                                    "places": {"type": "array", "items": {"type": "string"}},
+                                    "events": {"type": "array", "items": {"type": "string"}},
+                                    "dates": {"type": "array", "items": {"type": "string"}},
+                                    "families": {"type": "array", "items": {"type": "string"}},
+                                    "companies": {"type": "array", "items": {"type": "string"}},
+                                    "industries": {"type": "array", "items": {"type": "string"}},
+                                    "settlement_terms": {"type": "array", "items": {"type": "string"}}
+                                },
+                                "required": ["persons", "places", "events", "dates", "families", "companies", "industries", "settlement_terms"],
+                                "additionalProperties": False
+                            },
+                            "expansions": {"type": "array", "items": {"type": "string"}}
+                        },
+                        "required": ["query_type", "person", "entities", "expansions"],
+                        "additionalProperties": False
+                    }
+                }
+            }
         )
-        
-        expansions_text = response.choices[0].message.content.strip()
-        
-        # Parse the response into a list
-        expansions = [line.strip() for line in expansions_text.split('\n') if line.strip()]
-        
-        # Ensure the original query is included
+
+        result = json.loads(response.choices[0].message.content)
+
+        # Normalize person field
+        if not result["person"] or result["person"].lower() == "none":
+            result["person"] = None
+
+        # Ensure original query is first in expansions
+        expansions = result.get("expansions", [])
         if query not in expansions:
             expansions.insert(0, query)
-        
-        # Remove duplicates while preserving order
+        # Deduplicate preserving order
         seen = set()
-        unique_expansions = []
+        unique = []
         for exp in expansions:
             if exp.lower() not in seen:
                 seen.add(exp.lower())
-                unique_expansions.append(exp)
-        
-        return unique_expansions[:15]  # Limit to 15 expansions to avoid overwhelming
-        
+                unique.append(exp)
+        result["expansions"] = unique[:15]
+
+        return result
+
     except Exception as e:
-        print(f"Error in OpenAI query expansion: {e}, returning original query only")
-        return [query]
-
-
-
-def generate_query_expansions(query: str, query_type: str) -> List[str]:
-    """Main query expansion function - uses OpenAI with fallback."""
-    return generate_query_expansions_openai(query, query_type)
+        print(f"Error in query analysis: {e}, using defaults")
+        return default_result
 
 def get_meili_candidates(query: str, k: int = 200, document_id: Optional[str] = None) -> List[Tuple[str, int]]:
     """Get BM25 candidates from Meilisearch."""
@@ -380,14 +262,14 @@ def get_query_embedding(query: str) -> Optional[List[float]]:
         print(f"Warning: Failed to get query embedding: {e}")
         return None
 
-def apply_query_boosting(candidates: List[Tuple[str, float]], query: str, conn) -> List[Tuple[str, float]]:
-    """Apply query-specific boosting to candidates."""
-    
-    query_type = detect_query_type(query)
-    entities = extract_entities_from_query(query)
-    
+def apply_query_boosting(candidates: List[Tuple[str, float]], query_analysis: Dict[str, Any], conn) -> List[Tuple[str, float]]:
+    """Apply query-specific boosting to candidates using pre-computed query analysis."""
+
+    query_type = query_analysis["query_type"]
+    entities = query_analysis["entities"]
+
     if query_type == 'who':
-        person = extract_person_from_query(query)
+        person = query_analysis.get("person")
         boosted_candidates = []
         
         for passage_id, score in candidates:
@@ -695,13 +577,13 @@ def main(query: str, k: int, document_id: Optional[str]):
     """Search passages using hybrid retrieval with RRF fusion."""
     
     print(f"Searching for: {query}")
-    
-    # Analyze query
-    query_type = detect_query_type(query)
+
+    # Analyze query (single LLM call for classification, entities, and expansions)
+    query_analysis = analyze_query(query)
+    query_type = query_analysis["query_type"]
     print(f"Query type: {query_type}")
-    
-    # Generate query expansions
-    expansions = generate_query_expansions(query, query_type)
+
+    expansions = query_analysis["expansions"]
     if len(expansions) > 1:
         print(f"Query expansions: {expansions[1:]}")  # Skip the original query
     
@@ -752,7 +634,7 @@ def main(query: str, k: int, document_id: Optional[str]):
     
     # Apply query-specific boosting
     conn = get_db_connection()
-    boosted_candidates = apply_query_boosting(top_candidates, query, conn)
+    boosted_candidates = apply_query_boosting(top_candidates, query_analysis, conn)
     
     # Re-sort by boosted scores
     boosted_candidates = sorted(boosted_candidates, key=lambda x: x[1], reverse=True)
