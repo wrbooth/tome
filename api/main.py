@@ -55,13 +55,9 @@ async def search(request: SearchRequest):
             get_meili_candidates,
             get_vector_candidates,
             rrf,
-            apply_query_boosting,
+            rerank_candidates,
             get_passage_details,
-            analyze_query
         )
-
-        # Analyze query (single LLM call)
-        query_analysis = analyze_query(request.query)
 
         # Get candidates from both sources
         meili_candidates = get_meili_candidates(request.query, k=200, document_id=request.document_id)
@@ -86,16 +82,16 @@ async def search(request: SearchRequest):
         if not top_candidates:
             return []
         
-        # Apply query-specific boosting
+        # Re-rank with cross-encoder
         conn = get_db_connection()
-        boosted_candidates = apply_query_boosting(top_candidates, query_analysis, conn)
-        
+        reranked_candidates = rerank_candidates(top_candidates, request.query, conn, k=request.k)
+
         # Get passage details
-        passage_ids = [pid for pid, _ in boosted_candidates]
+        passage_ids = [pid for pid, _ in reranked_candidates]
         passage_details = get_passage_details(conn, passage_ids)
-        
+
         # Create score mapping
-        score_map = {pid: score for pid, score in boosted_candidates}
+        score_map = {pid: score for pid, score in reranked_candidates}
         
         # Format results
         results = []

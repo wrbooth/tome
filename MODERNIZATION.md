@@ -46,14 +46,15 @@ Changes:
 ## Medium Priority
 
 ### 5. Replace Manual Boosting with Cross-Encoder Re-Ranker
-**Status:** Not started
+**Status:** Complete
 
-`apply_query_boosting()` (`search.py:383-612`) issues individual SQL queries per candidate per entity for re-ranking using hardcoded multiplicative boost factors. This is slow, brittle, and the boost values are hand-tuned.
+Replaced the entire `apply_query_boosting()` function (~230 lines of per-row SQL queries with hand-tuned boost multipliers) with `rerank_candidates()` using `cross-encoder/ms-marco-MiniLM-L-6-v2` via sentence-transformers (already a dependency).
 
-**Changes needed:**
-- Replace the boosting logic with a cross-encoder re-ranker (e.g., Cohere Rerank API, or a local model like `ms-marco-MiniLM`)
-- Remove the entity-based boosting code and its associated LLM calls
-- The `passage_entities` and `passage_years` tables can still be useful for filtering, but shouldn't drive scoring
+Changes:
+- `search.py`: Removed `apply_query_boosting()`, added `_get_reranker()` (lazy-loaded singleton) and `rerank_candidates()` which fetches all passage texts in one SQL query, scores them in one batch with the cross-encoder, and returns sorted results
+- `api/main.py`: Updated to use `rerank_candidates` instead of `apply_query_boosting`, removed unused `analyze_query` import
+- No new dependencies needed — sentence-transformers already includes CrossEncoder support
+- The `passage_entities` and `passage_years` tables remain available for future filtering use
 
 ### 6. Use Meilisearch Native Hybrid Search
 **Status:** Not started

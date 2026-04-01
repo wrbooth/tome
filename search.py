@@ -262,236 +262,46 @@ def get_query_embedding(query: str) -> Optional[List[float]]:
         print(f"Warning: Failed to get query embedding: {e}")
         return None
 
-def apply_query_boosting(candidates: List[Tuple[str, float]], query_analysis: Dict[str, Any], conn) -> List[Tuple[str, float]]:
-    """Apply query-specific boosting to candidates using pre-computed query analysis."""
+def _get_reranker():
+    """Lazy-load the cross-encoder re-ranker model."""
+    if not hasattr(_get_reranker, "_model"):
+        from sentence_transformers import CrossEncoder
+        _get_reranker._model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+    return _get_reranker._model
 
-    query_type = query_analysis["query_type"]
-    entities = query_analysis["entities"]
+def rerank_candidates(candidates: List[Tuple[str, float]], query: str, conn, k: int = 20) -> List[Tuple[str, float]]:
+    """Re-rank candidates using a cross-encoder model."""
+    if not candidates:
+        return candidates
 
-    if query_type == 'who':
-        person = query_analysis.get("person")
-        boosted_candidates = []
-        
-        for passage_id, score in candidates:
-            boost_multiplier = 1.0
-            
-            # Check if passage has matching person entity
-            with conn.cursor() as cur:
-                # If we have a specific person from the query
-                if person:
-                    cur.execute("""
-                        SELECT 1 FROM passage_entities 
-                        WHERE passage_id = %s 
-                        AND ent_type = 'PERSON' 
-                        AND norm_entity = %s
-                    """, (passage_id, person.lower()))
-                    
-                    if cur.fetchone():
-                        # Boost score for matching person
-                        boost_multiplier *= 1.5
-                
-                                # For role-based "who" questions, boost passages with PERSON entities
-                # This is more generic and scalable than hardcoding specific names
-                if query_type == 'who':
-                    cur.execute("""
-                        SELECT COUNT(*) FROM passage_entities 
-                        WHERE passage_id = %s 
-                        AND ent_type = 'PERSON'
-                    """, (passage_id,))
-                    
-                    person_count = cur.fetchone()[0]
-                    if person_count > 0:
-                        # Boost for passages with person entities (more people = more relevant for "who" questions)
-                        boost_multiplier *= (1.0 + (person_count * 0.2))  # 20% boost per person entity
-            
-            boosted_score = score * boost_multiplier
-            boosted_candidates.append((passage_id, boosted_score))
-        
-        return boosted_candidates
-    
-    elif query_type == 'when':
-        # Boost passages with dates/years for temporal queries
-        boosted_candidates = []
-        
-        for passage_id, score in candidates:
-            boost_multiplier = 1.0
-            
-            # Check if passage has years mentioned
-            with conn.cursor() as cur:
-                # Check for specific years mentioned in the query
-                if entities.get("dates"):
-                    for date in entities["dates"]:
-                        # Handle century references like "1800s" or "19th century"
-                        if date.endswith('s') and date[:-1].isdigit():
-                            # Convert "1800s" to range 1800-1899
-                            century_start = int(date[:-1])
-                            century_end = century_start + 99
-                            cur.execute("""
-                                SELECT COUNT(*) FROM passage_years 
-                                WHERE passage_id = %s AND year BETWEEN %s AND %s
-                            """, (passage_id, century_start, century_end))
-                        elif "century" in date.lower():
-                            # Handle "19th century" -> 1800-1899
-                            if "19th" in date.lower():
-                                cur.execute("""
-                                    SELECT COUNT(*) FROM passage_years 
-                                    WHERE passage_id = %s AND year BETWEEN 1800 AND 1899
-                                """, (passage_id,))
-                            elif "18th" in date.lower():
-                                cur.execute("""
-                                    SELECT COUNT(*) FROM passage_years 
-                                    WHERE passage_id = %s AND year BETWEEN 1700 AND 1799
-                                """, (passage_id,))
-                            elif "20th" in date.lower():
-                                cur.execute("""
-                                    SELECT COUNT(*) FROM passage_years 
-                                    WHERE passage_id = %s AND year BETWEEN 1900 AND 1999
-                                """, (passage_id,))
-                            else:
-                                continue
-                        elif date.isdigit():
-                            # Regular year
-                            cur.execute("""
-                                SELECT COUNT(*) FROM passage_years 
-                                WHERE passage_id = %s AND year = %s
-                            """, (passage_id, int(date)))
-                        else:
-                            continue
-                        
-                        if cur.fetchone()[0] > 0:
-                            # Strong boost for exact year match
-                            boost_multiplier *= 2.0
-                            break
-                
-                # Also check for any years in the passage (weaker boost)
-                year_count = 0  # Initialize year_count
-                if boost_multiplier == 1.0:  # Only if no exact match found
-                    cur.execute("""
-                        SELECT COUNT(*) FROM passage_years 
-                        WHERE passage_id = %s
-                    """, (passage_id,))
-                    
-                    year_count = cur.fetchone()[0]
-                    if year_count > 0:
-                        # Moderate boost for passages with any dates
-                        boost_multiplier *= 1.3
-                
-                # Check for settlement-related terms in the query
-                if entities.get("settlement_terms"):
-                    settlement_boost = False
-                    for term in entities["settlement_terms"]:
-                        # Check if passage contains settlement-related entities
-                        cur.execute("""
-                            SELECT 1 FROM passage_entities 
-                            WHERE passage_id = %s 
-                            AND (ent_type = 'ORG' OR ent_type = 'GPE')
-                            AND (norm_entity LIKE %s OR norm_entity LIKE %s OR norm_entity LIKE %s)
-                        """, (passage_id, f"%settler%", f"%arriv%", f"%settlers%"))
-                        
-                        if cur.fetchone():
-                            # Boost for settlement-related content
-                            boost_multiplier *= 1.4
-                            settlement_boost = True
-                            break
-                    
-                    # Additional boost for passages with both settlement terms AND years
-                    if settlement_boost and year_count > 0:
-                        boost_multiplier *= 1.2
-                
-                # Special boost for settlement-related organization entities
-                cur.execute("""
-                    SELECT 1 FROM passage_entities 
-                    WHERE passage_id = %s 
-                    AND ent_type = 'ORG' 
-                    AND norm_entity LIKE %s
-                """, (passage_id, f"%settler%"))
-                
-                if cur.fetchone():
-                    # Strong boost for settlement organization entities
-                    boost_multiplier *= 1.8
-            
-            boosted_score = score * boost_multiplier
-            boosted_candidates.append((passage_id, boosted_score))
-        
-        return boosted_candidates
-    
-    elif query_type == 'factoid':
-        # Boost passages with family names and temporal information
-        boosted_candidates = []
-        
-        for passage_id, score in candidates:
-            boost_multiplier = 1.0
-            
-            # Check if passage has family-related entities
-            with conn.cursor() as cur:
-                # Check for family names in entities
-                if entities.get("families"):
-                    for family in entities["families"]:
-                        cur.execute("""
-                            SELECT 1 FROM passage_entities 
-                            WHERE passage_id = %s 
-                            AND ent_type = 'PERSON' 
-                            AND (norm_entity = %s OR norm_entity LIKE %s)
-                        """, (passage_id, family.lower(), f"%{family.lower()}%"))
-                        
-                        if cur.fetchone():
-                            boost_multiplier *= 1.3
-                            break
-                
-                # Check for temporal information
-                if entities.get("dates"):
-                    for date in entities["dates"]:
-                        cur.execute("""
-                            SELECT COUNT(*) FROM passage_years 
-                            WHERE passage_id = %s AND year = %s
-                        """, (passage_id, int(date)))
-                        
-                        if cur.fetchone()[0] > 0:
-                            boost_multiplier *= 1.2
-                            break
-            
-            boosted_score = score * boost_multiplier
-            boosted_candidates.append((passage_id, boosted_score))
-        
-        return boosted_candidates
-    
-    elif query_type == 'person':
-        # Boost passages with specific person names
-        boosted_candidates = []
-        
-        for passage_id, score in candidates:
-            boost_multiplier = 1.0
-            
-            # Check if passage has the specific person mentioned
-            with conn.cursor() as cur:
-                # Initialize variables
-                person_found = False
-                
-                # Check for person names in entities
-                if entities.get("persons"):
-                    for person in entities["persons"]:
-                        # More specific matching for person names
-                        cur.execute("""
-                            SELECT norm_entity FROM passage_entities 
-                            WHERE passage_id = %s 
-                            AND ent_type = 'PERSON' 
-                            AND norm_entity LIKE %s
-                        """, (passage_id, f"%{person.lower()}%"))
-                        
-                        if cur.fetchone():
-                            # Boost for person entity match
-                            boost_multiplier *= 2.0
-                            person_found = True
-                            break
-            
-            # For person queries, we've already applied the boost above
-            
-            boosted_score = score * boost_multiplier
-            boosted_candidates.append((passage_id, boosted_score))
-        
-        return boosted_candidates
-    
-    return candidates
+    # Fetch passage texts for all candidates in one query
+    passage_ids = [pid for pid, _ in candidates]
+    placeholders = ','.join(['%s'] * len(passage_ids))
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(f"""
+            SELECT id, text FROM passages WHERE id IN ({placeholders})
+        """, passage_ids)
+        id_to_text = {row['id']: row['text'] for row in cur.fetchall()}
+
+    # Build query-passage pairs for the cross-encoder
+    pairs = []
+    valid_ids = []
+    for pid, _ in candidates:
+        text = id_to_text.get(pid)
+        if text:
+            pairs.append((query, text))
+            valid_ids.append(pid)
+
+    if not pairs:
+        return candidates
+
+    # Score all pairs in one batch
+    reranker = _get_reranker()
+    scores = reranker.predict(pairs)
+
+    # Sort by cross-encoder score descending
+    ranked = sorted(zip(valid_ids, scores), key=lambda x: x[1], reverse=True)
+    return [(pid, float(score)) for pid, score in ranked[:k]]
 
 def get_passage_details(conn, passage_ids: List[str]) -> List[Dict[str, Any]]:
     """Get detailed passage information."""
@@ -632,19 +442,17 @@ def main(query: str, k: int, document_id: Optional[str]):
         print("No results after fusion")
         return
     
-    # Apply query-specific boosting
+    # Re-rank with cross-encoder
     conn = get_db_connection()
-    boosted_candidates = apply_query_boosting(top_candidates, query_analysis, conn)
-    
-    # Re-sort by boosted scores
-    boosted_candidates = sorted(boosted_candidates, key=lambda x: x[1], reverse=True)
+    print("Re-ranking with cross-encoder...")
+    reranked_candidates = rerank_candidates(top_candidates, query, conn, k=k)
     
     # Get passage details
-    passage_ids = [pid for pid, _ in boosted_candidates]
+    passage_ids = [pid for pid, _ in reranked_candidates]
     passage_details = get_passage_details(conn, passage_ids)
-    
+
     # Create score mapping
-    score_map = {pid: score for pid, score in boosted_candidates}
+    score_map = {pid: score for pid, score in reranked_candidates}
     
     # Generate answer
     answer = generate_answer(query, query_type, passage_details)
