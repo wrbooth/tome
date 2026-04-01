@@ -31,20 +31,17 @@ Changes:
 Per-query LLM calls reduced from 6+ to 3 (query analysis, query embedding, answer generation).
 
 ### 4. Unify Dependency Management
-**Status:** Not started
+**Status:** Complete
 
-Three conflicting dependency specs exist:
-- `requirements.txt` pins ancient versions (e.g., `openai==1.3.0`, `meilisearch==0.20.0`)
-- `api/requirements.txt` is a different subset with its own pins
-- `pyproject.toml` specifies modern ranges (e.g., `openai>=1.100.2`, `meilisearch>=0.37.0`)
+Migrated from Poetry to uv. Removed conflicting dependency specs.
 
-This caused the `openai`/`httpx` and `sentence-transformers`/`huggingface_hub` version mismatch bugs.
-
-**Changes needed:**
-- Make `pyproject.toml` the single source of truth
-- Delete `requirements.txt` or auto-generate it via `poetry export`
-- Update `api/Dockerfile` to install from `pyproject.toml` or an exported requirements file
-- Ensure `poetry.lock` is committed and used for reproducible installs
+Changes:
+- Deleted `requirements.txt`, `api/requirements.txt`, and `poetry.lock`
+- Rewrote `pyproject.toml`: loosened version constraints, switched build-backend from poetry-core to hatchling
+- Generated `uv.lock` for reproducible installs
+- Updated `api/Dockerfile` to use uv (multi-stage copy from `ghcr.io/astral-sh/uv`)
+- Added `.venv/` to `.gitignore`
+- `uv sync` upgraded many stale packages (pymupdf, spacy, transformers, fastapi, openai, etc.)
 
 ## Medium Priority
 
