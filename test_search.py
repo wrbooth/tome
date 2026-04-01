@@ -118,7 +118,7 @@ def parse_search_results(output: str) -> List[Dict]:
             
         if in_results and line.strip():
             # Parse result line: " 1  0.099  A Brief History of Guernsey County  p. 4  ..."
-            match = re.match(r'\s*(\d+)\s+([\d.]+)\s+(.+?)\s+p\.\s+(\d+)\s+(.+)', line)
+            match = re.match(r'\s*(\d+)\s+(-?[\d.]+)\s+(.+?)\s+p\.\s+(\d+)\s+(.+)', line)
             if match:
                 rank = int(match.group(1))
                 score = float(match.group(2))
