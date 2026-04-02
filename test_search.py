@@ -32,9 +32,9 @@ def run_search(query: str, k: int = 20) -> Dict:
             ["poetry", "run", "python", "search.py", "--q", query, "--k", str(k)],
             capture_output=True,
             text=True,
-            timeout=60
+            timeout=120
         )
-        
+
         if result.returncode != 0:
             return {
                 "success": False,
@@ -42,7 +42,7 @@ def run_search(query: str, k: int = 20) -> Dict:
                 "stdout": result.stdout,
                 "stderr": result.stderr
             }
-        
+
         return {
             "success": True,
             "output": result.stdout,
@@ -51,7 +51,7 @@ def run_search(query: str, k: int = 20) -> Dict:
     except subprocess.TimeoutExpired:
         return {
             "success": False,
-            "error": "Search timed out after 60 seconds"
+            "error": "Search timed out after 120 seconds"
         }
     except Exception as e:
         return {
