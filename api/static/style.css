@@ -1,0 +1,93 @@
+/* Typing indicator — three bouncing dots */
+.typing-dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background-color: #94a3b8;
+    display: inline-block;
+    animation: typing-bounce 1.4s infinite ease-in-out both;
+}
+.typing-dot:nth-child(2) { animation-delay: 0.16s; }
+.typing-dot:nth-child(3) { animation-delay: 0.32s; }
+
+@keyframes typing-bounce {
+    0%, 80%, 100% { transform: scale(0); }
+    40% { transform: scale(1); }
+}
+
+/* Streaming cursor — blinking block after last character */
+.streaming-cursor::after {
+    content: '\258C';
+    animation: cursor-blink 0.7s step-end infinite;
+    color: #3b82f6;
+    font-weight: 400;
+}
+
+@keyframes cursor-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
+
+/* Markdown prose styling for answer bubbles */
+.prose p { margin-bottom: 0.625em; }
+.prose p:last-child { margin-bottom: 0; }
+.prose h1, .prose h2, .prose h3 {
+    margin-top: 1em;
+    margin-bottom: 0.5em;
+    font-weight: 600;
+    color: #1e293b;
+}
+.prose h1 { font-size: 1.25em; }
+.prose h2 { font-size: 1.125em; }
+.prose h3 { font-size: 1em; }
+.prose ul, .prose ol {
+    margin-left: 1.5em;
+    margin-bottom: 0.625em;
+}
+.prose ul { list-style-type: disc; }
+.prose ol { list-style-type: decimal; }
+.prose li { margin-bottom: 0.25em; }
+.prose code {
+    background: #f1f5f9;
+    padding: 0.125em 0.375em;
+    border-radius: 0.25em;
+    font-size: 0.875em;
+}
+.prose blockquote {
+    border-left: 3px solid #cbd5e1;
+    padding-left: 1em;
+    color: #64748b;
+    margin: 0.75em 0;
+}
+.prose strong { font-weight: 600; }
+.prose a { color: #2563eb; text-decoration: underline; }
+
+/* Source citation details — inline expandable */
+.source-citation summary {
+    display: inline;
+    cursor: pointer;
+    color: #2563eb;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 2px;
+    font-weight: 500;
+}
+.source-citation summary:hover {
+    color: #1d4ed8;
+}
+.source-citation summary::marker,
+.source-citation summary::-webkit-details-marker {
+    display: none;
+}
+
+/* Result card details marker override */
+.result-card summary::marker,
+.result-card summary::-webkit-details-marker {
+    display: none;
+}
+.result-card summary .chevron {
+    transition: transform 0.15s ease;
+}
+.result-card[open] summary .chevron {
+    transform: rotate(90deg);
+}

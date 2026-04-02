@@ -30,19 +30,19 @@ def _make_search_result(**overrides):
     return defaults
 
 
-# ── GET /health ───────────────────────────────────────────────────────────
+# ── GET /api/health ───────────────────────────────────────────────────────
 
 class TestHealthEndpoint:
     def test_returns_healthy(self):
         from api.main import app
         from fastapi.testclient import TestClient
         client = TestClient(app)
-        response = client.get("/health")
+        response = client.get("/api/health")
         assert response.status_code == 200
         assert response.json() == {"status": "healthy"}
 
 
-# ── POST /search ──────────────────────────────────────────────────────────
+# ── POST /api/search ──────────────────────────────────────────────────────
 
 class TestSearchEndpoint:
     def test_successful_search(self):
@@ -51,7 +51,7 @@ class TestSearchEndpoint:
         mock_result = _make_search_result()
         with patch("api.main.search_codex", return_value=mock_result):
             client = TestClient(app)
-            response = client.post("/search", json={"query": "What happened?"})
+            response = client.post("/api/search", json={"query": "What happened?"})
             assert response.status_code == 200
             data = response.json()
             assert data["query_type"] == "factoid"
@@ -65,7 +65,7 @@ class TestSearchEndpoint:
         mock_result = _make_search_result()
         with patch("api.main.search_codex", return_value=mock_result):
             client = TestClient(app)
-            response = client.post("/search", json={"query": "test"})
+            response = client.post("/api/search", json={"query": "test"})
             result = response.json()["results"][0]
             assert result["text"] == "Short text."
             assert result["headings_path"] == ["Chapter 1"]
@@ -78,7 +78,7 @@ class TestSearchEndpoint:
         mock_result["query_analysis"]["expansions"] = ["who is John Smith", "John Smith history"]
         with patch("api.main.search_codex", return_value=mock_result):
             client = TestClient(app)
-            response = client.post("/search", json={"query": "Who is John Smith?"})
+            response = client.post("/api/search", json={"query": "Who is John Smith?"})
             data = response.json()
             qa = data["query_analysis"]
             assert qa["query_type"] == "factoid"
@@ -95,7 +95,7 @@ class TestSearchEndpoint:
         )
         with patch("api.main.search_codex", return_value=mock_result):
             client = TestClient(app)
-            response = client.post("/search", json={"query": "test"})
+            response = client.post("/api/search", json={"query": "test"})
             result = response.json()["results"][0]
             assert result["snippet"].endswith("...")
             assert len(result["snippet"]) == 203  # 200 + "..."
@@ -106,7 +106,7 @@ class TestSearchEndpoint:
         from fastapi.testclient import TestClient
         with patch("api.main.search_codex", side_effect=Exception("Search failed")):
             client = TestClient(app)
-            response = client.post("/search", json={"query": "test"})
+            response = client.post("/api/search", json={"query": "test"})
             assert response.status_code == 500
 
     def test_search_with_missing_query_analysis(self):
@@ -123,12 +123,12 @@ class TestSearchEndpoint:
         }
         with patch("api.main.search_codex", return_value=mock_result):
             client = TestClient(app)
-            response = client.post("/search", json={"query": "test"})
+            response = client.post("/api/search", json={"query": "test"})
             assert response.status_code == 200
             assert response.json()["query_analysis"]["query_type"] == "general"
 
 
-# ── POST /search/stream ──────────────────────────────────────────────────
+# ── POST /api/search/stream ──────────────────────────────────────────────
 
 class TestSearchStreamEndpoint:
     def test_stream_returns_sse_events(self):
@@ -156,7 +156,7 @@ class TestSearchStreamEndpoint:
 
             client = TestClient(app)
             response = client.post(
-                "/search/stream",
+                "/api/search/stream",
                 json={"query": "test"},
                 headers={"Accept": "text/event-stream"},
             )
@@ -186,7 +186,7 @@ class TestSearchStreamEndpoint:
 
             client = TestClient(app)
             response = client.post(
-                "/search/stream",
+                "/api/search/stream",
                 json={"query": "nonexistent"},
                 headers={"Accept": "text/event-stream"},
             )
@@ -197,7 +197,7 @@ class TestSearchStreamEndpoint:
             assert "done" in event_types
 
 
-# ── GET /documents ────────────────────────────────────────────────────────
+# ── GET /api/documents ────────────────────────────────────────────────────
 
 class TestDocumentsEndpoint:
     def test_list_documents(self):
@@ -214,7 +214,7 @@ class TestDocumentsEndpoint:
 
         with patch("api.main.db_connection", make_mock_db_connection(mock_conn)):
             client = TestClient(app)
-            response = client.get("/documents")
+            response = client.get("/api/documents")
             assert response.status_code == 200
             assert len(response.json()) == 1
 
@@ -223,11 +223,11 @@ class TestDocumentsEndpoint:
         from fastapi.testclient import TestClient
         with patch("api.main.db_connection", side_effect=Exception("DB down")):
             client = TestClient(app)
-            response = client.get("/documents")
+            response = client.get("/api/documents")
             assert response.status_code == 500
 
 
-# ── GET /documents/{document_id} ─────────────────────────────────────────
+# ── GET /api/documents/{document_id} ─────────────────────────────────────
 
 class TestDocumentDetailEndpoint:
     def test_returns_document_stats(self):
@@ -243,7 +243,7 @@ class TestDocumentDetailEndpoint:
         with patch("api.main.db_connection", make_mock_db_connection(MagicMock())), \
              patch("api.main.get_document_stats", return_value=mock_stats):
             client = TestClient(app)
-            response = client.get("/documents/d1")
+            response = client.get("/api/documents/d1")
             assert response.status_code == 200
             data = response.json()
             assert data["document"]["title"] == "Doc A"
@@ -256,7 +256,7 @@ class TestDocumentDetailEndpoint:
         with patch("api.main.db_connection", make_mock_db_connection(MagicMock())), \
              patch("api.main.get_document_stats", return_value=None):
             client = TestClient(app)
-            response = client.get("/documents/nonexistent")
+            response = client.get("/api/documents/nonexistent")
             assert response.status_code == 404
 
     def test_document_detail_db_error(self):
@@ -264,11 +264,11 @@ class TestDocumentDetailEndpoint:
         from fastapi.testclient import TestClient
         with patch("api.main.db_connection", side_effect=Exception("DB error")):
             client = TestClient(app)
-            response = client.get("/documents/d1")
+            response = client.get("/api/documents/d1")
             assert response.status_code == 500
 
 
-# ── POST /documents/upload ───────────────────────────────────────────────
+# ── POST /api/documents/upload ───────────────────────────────────────────
 
 class TestUploadEndpoint:
     def test_upload_pdf_returns_202(self):
@@ -279,7 +279,7 @@ class TestUploadEndpoint:
         client = TestClient(app)
         file_content = b"%PDF-1.4 fake content"
         response = client.post(
-            "/documents/upload",
+            "/api/documents/upload",
             files={"file": ("test.pdf", io.BytesIO(file_content), "application/pdf")},
             data={"title": "Test Doc", "authors": "Author A", "pub_year": "2020"},
         )
@@ -296,7 +296,7 @@ class TestUploadEndpoint:
         _ingest_tasks.clear()
         client = TestClient(app)
         response = client.post(
-            "/documents/upload",
+            "/api/documents/upload",
             files={"file": ("notes.txt", io.BytesIO(b"Some text"), "text/plain")},
             data={"title": "Notes"},
         )
@@ -307,14 +307,14 @@ class TestUploadEndpoint:
         from fastapi.testclient import TestClient
         client = TestClient(app)
         response = client.post(
-            "/documents/upload",
+            "/api/documents/upload",
             files={"file": ("image.png", io.BytesIO(b"fake"), "image/png")},
         )
         assert response.status_code == 400
         assert "PDF and TXT" in response.json()["detail"]
 
 
-# ── GET /documents/upload/{task_id} ──────────────────────────────────────
+# ── GET /api/documents/upload/{task_id} ──────────────────────────────────
 
 class TestUploadStatusEndpoint:
     def test_returns_task_status(self):
@@ -331,7 +331,7 @@ class TestUploadStatusEndpoint:
             "created_at": "2026-04-02T00:00:00+00:00",
         }
         client = TestClient(app)
-        response = client.get("/documents/upload/task-123")
+        response = client.get("/api/documents/upload/task-123")
         assert response.status_code == 200
         assert response.json()["status"] == "running"
 
@@ -341,11 +341,11 @@ class TestUploadStatusEndpoint:
 
         _ingest_tasks.clear()
         client = TestClient(app)
-        response = client.get("/documents/upload/nonexistent")
+        response = client.get("/api/documents/upload/nonexistent")
         assert response.status_code == 404
 
 
-# ── GET /stats ────────────────────────────────────────────────────────────
+# ── GET /api/stats ────────────────────────────────────────────────────────
 
 class TestStatsEndpoint:
     def test_returns_stats(self):
@@ -366,7 +366,7 @@ class TestStatsEndpoint:
 
         with patch("api.main.db_connection", make_mock_db_connection(mock_conn)):
             client = TestClient(app)
-            response = client.get("/stats")
+            response = client.get("/api/stats")
             assert response.status_code == 200
             data = response.json()
             assert data["documents"] == 10
@@ -393,7 +393,7 @@ class TestStatsEndpoint:
 
         with patch("api.main.db_connection", make_mock_db_connection(mock_conn)):
             client = TestClient(app)
-            response = client.get("/stats")
+            response = client.get("/api/stats")
             assert response.status_code == 200
             assert response.json()["embedding_coverage"] == "0%"
 

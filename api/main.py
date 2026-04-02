@@ -9,15 +9,17 @@ import asyncio
 import logging
 import uuid
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 logger = logging.getLogger(__name__)
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import List, Optional
 from psycopg2.extras import RealDictCursor
@@ -32,6 +34,9 @@ from models import (
 )
 
 app = FastAPI(title="Codex Search API", version="2.0.0")
+
+# Sentinel for queue-based streaming bridge
+_SENTINEL = object()
 
 # CORS -- allow all origins during development
 app.add_middleware(
@@ -80,13 +85,16 @@ _ingest_tasks: dict[str, dict] = {}
 # Endpoints
 # ---------------------------------------------------------------------------
 
-@app.get("/health")
+router = APIRouter(prefix="/api")
+
+
+@router.get("/health")
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
 
 
-@app.post("/search", response_model=SearchResponse)
+@router.post("/search", response_model=SearchResponse)
 async def search(request: SearchRequest):
     """Search passages and generate an answer."""
     try:
@@ -135,7 +143,7 @@ def _sse_event(event: str, data) -> str:
     return f"event: {event}\ndata: {payload}\n\n"
 
 
-@app.post("/search/stream")
+@router.post("/search/stream")
 async def search_stream(request: SearchRequest):
     """Stream search results + LLM answer via Server-Sent Events.
 
@@ -194,18 +202,33 @@ async def search_stream(request: SearchRequest):
                 "results": results_payload,
             })
 
-            # Stream LLM answer tokens
+            # Stream LLM answer tokens via queue bridge (sync generator → async yields)
             chunks = [
                 {"text": r["text"], "page": r["page"], "title": r["title"]}
                 for r in passage_details
             ]
 
-            def _stream_tokens():
-                return list(stream_answer_with_llm(request.query, chunks))
+            queue: asyncio.Queue = asyncio.Queue()
+            loop = asyncio.get_event_loop()
 
-            tokens = await asyncio.to_thread(_stream_tokens)
-            for token in tokens:
-                yield _sse_event("token", token)
+            def _produce_tokens():
+                try:
+                    for token in stream_answer_with_llm(request.query, chunks):
+                        loop.call_soon_threadsafe(queue.put_nowait, token)
+                except Exception as exc:
+                    loop.call_soon_threadsafe(queue.put_nowait, exc)
+                finally:
+                    loop.call_soon_threadsafe(queue.put_nowait, _SENTINEL)
+
+            loop.run_in_executor(None, _produce_tokens)
+
+            while True:
+                item = await queue.get()
+                if item is _SENTINEL:
+                    break
+                if isinstance(item, Exception):
+                    raise item
+                yield _sse_event("token", item)
 
             yield _sse_event("done", {})
 
@@ -220,7 +243,7 @@ async def search_stream(request: SearchRequest):
     )
 
 
-@app.get("/documents", response_model=List[DocumentInfo])
+@router.get("/documents", response_model=List[DocumentInfo])
 async def list_documents():
     """List all documents in the system."""
     try:
@@ -236,7 +259,7 @@ async def list_documents():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/documents/{document_id}", response_model=DocumentDetail)
+@router.get("/documents/{document_id}", response_model=DocumentDetail)
 async def get_document_detail(document_id: str):
     """Get detailed information about a single document."""
     try:
@@ -251,7 +274,7 @@ async def get_document_detail(document_id: str):
     return stats
 
 
-@app.post("/documents/upload", status_code=202, response_model=IngestTaskInfo)
+@router.post("/documents/upload", status_code=202, response_model=IngestTaskInfo)
 async def upload_document(
     file: UploadFile = File(...),
     title: str = Form(""),
@@ -291,7 +314,7 @@ async def upload_document(
     return _ingest_tasks[task_id]
 
 
-@app.get("/documents/upload/{task_id}", response_model=IngestTaskInfo)
+@router.get("/documents/upload/{task_id}", response_model=IngestTaskInfo)
 async def get_upload_status(task_id: str):
     """Poll the status of a document upload/ingestion task."""
     task = _ingest_tasks.get(task_id)
@@ -333,7 +356,7 @@ async def _run_ingestion(
             pass
 
 
-@app.get("/stats")
+@router.get("/stats")
 async def get_stats():
     """Get system statistics."""
     try:
@@ -341,6 +364,22 @@ async def get_stats():
             return get_system_stats(conn)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+app.include_router(router)
+
+# ---------------------------------------------------------------------------
+# Static file serving (SPA)
+# ---------------------------------------------------------------------------
+
+_static_dir = Path(__file__).parent / "static"
+if _static_dir.is_dir():
+    app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        """Catch-all: serve index.html for SPA routing."""
+        return FileResponse(str(_static_dir / "index.html"))
 
 
 if __name__ == "__main__":
