@@ -4,7 +4,7 @@ LLM-based answer generation for search results.
 """
 
 import logging
-from typing import List, Dict, Any, Optional
+from typing import Generator, List, Dict, Any, Optional
 
 from config import get_openai_client, ANSWER_MODEL
 
@@ -45,6 +45,67 @@ def format_chunks_for_llm(chunks: List[Dict[str, Any]]) -> str:
     
     return "\n".join(formatted_chunks)
 
+def _build_messages(query: str, chunks_text: str) -> List[Dict[str, str]]:
+    """Build the system + user messages for answer generation."""
+    system_prompt = """You are a helpful assistant that answers questions based ONLY on the provided text chunks.
+
+CRITICAL RULES:
+1. ONLY use information from the provided chunks. Do not use any external knowledge.
+2. If the answer cannot be found in the chunks, say "I cannot answer this question based on the provided information." But do talk about the information you do have.
+3. Do not make assumptions or inferences beyond what is explicitly stated in the chunks.
+4. Always provide source references at the end of your answer in this format:
+   Sources: [Document Title, Page X; Document Title, Page Y]
+5. Be concise but thorough in your answer.
+6. If multiple chunks contain relevant information, synthesize them clearly.
+7. For yes/no questions, be extremely precise about timing and conditions. If a question asks "Did X happen in YEAR Y?" and X happened in YEAR Z (different from Y), the answer is "No."
+8. When information comes from multiple documents, clearly indicate which document each piece of information comes from.
+
+
+The user will provide a question and relevant text chunks. Answer based ONLY on those chunks."""
+
+    user_prompt = f"""Question: {query}
+
+Relevant information from the document:
+
+{chunks_text}
+
+Please answer the question based ONLY on the information provided above. If the answer is not in the chunks, say so clearly."""
+
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ]
+
+
+def stream_answer_with_llm(query: str, chunks: List[Dict[str, Any]], model: str = ANSWER_MODEL) -> Generator[str, None, None]:
+    """
+    Stream an answer token-by-token using the OpenAI streaming API.
+
+    Yields:
+        Individual token strings as they arrive from the LLM.
+    """
+    if not chunks:
+        yield "I cannot provide an answer as no relevant information was found in the search results."
+        return
+
+    chunks_text = format_chunks_for_llm(chunks)
+    messages = _build_messages(query, chunks_text)
+
+    try:
+        stream = _get_client().chat.completions.create(
+            model=model,
+            messages=messages,
+            max_completion_tokens=5000,
+            stream=True,
+        )
+        for chunk in stream:
+            delta = chunk.choices[0].delta.content
+            if delta:
+                yield delta
+    except Exception as e:
+        yield f"Error generating answer: {str(e)}"
+
+
 def generate_answer_with_llm(query: str, chunks: List[Dict[str, Any]], model: str = ANSWER_MODEL) -> Dict[str, Any]:
     """
     Generate an answer using LLM based on provided chunks.
@@ -66,41 +127,13 @@ def generate_answer_with_llm(query: str, chunks: List[Dict[str, Any]], model: st
     
     # Format chunks for LLM
     chunks_text = format_chunks_for_llm(chunks)
-    
-    # Create the system prompt with strict instructions
-    system_prompt = """You are a helpful assistant that answers questions based ONLY on the provided text chunks. 
-
-CRITICAL RULES:
-1. ONLY use information from the provided chunks. Do not use any external knowledge.
-2. If the answer cannot be found in the chunks, say "I cannot answer this question based on the provided information." But do talk about the information you do have.
-3. Do not make assumptions or inferences beyond what is explicitly stated in the chunks.
-4. Always provide source references at the end of your answer in this format:
-   Sources: [Document Title, Page X; Document Title, Page Y]
-5. Be concise but thorough in your answer.
-6. If multiple chunks contain relevant information, synthesize them clearly.
-7. For yes/no questions, be extremely precise about timing and conditions. If a question asks "Did X happen in YEAR Y?" and X happened in YEAR Z (different from Y), the answer is "No."
-8. When information comes from multiple documents, clearly indicate which document each piece of information comes from.
-
-
-The user will provide a question and relevant text chunks. Answer based ONLY on those chunks."""
-
-    # Create the user prompt
-    user_prompt = f"""Question: {query}
-
-Relevant information from the document:
-
-{chunks_text}
-
-Please answer the question based ONLY on the information provided above. If the answer is not in the chunks, say so clearly."""
+    messages = _build_messages(query, chunks_text)
 
     try:
         # Call the LLM
         response = _get_client().chat.completions.create(
             model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
+            messages=messages,
             #temperature=0.1,  # Low temperature for more consistent, factual responses
             max_completion_tokens=5000
         )

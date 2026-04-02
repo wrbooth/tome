@@ -86,3 +86,52 @@ class DocumentListItem(BaseModel):
     embedded_count: int = 0
     min_page: Optional[int] = None
     max_page: Optional[int] = None
+
+
+# ---------------------------------------------------------------------------
+# API-specific models
+# ---------------------------------------------------------------------------
+
+class QueryAnalysisInfo(BaseModel):
+    """Query analysis details returned alongside search results."""
+    query_type: str
+    person: Optional[str] = None
+    entities: QueryEntities = Field(default_factory=QueryEntities)
+    expansions: List[str] = Field(default_factory=list)
+
+
+class DocumentPassageStats(BaseModel):
+    total_passages: int = 0
+    embedded_passages: int = 0
+
+
+class DocumentEntityStats(BaseModel):
+    entity_count: int = 0
+
+
+class DocumentYearStats(BaseModel):
+    year_count: int = 0
+
+
+class DocumentPageRange(BaseModel):
+    min_page: Optional[int] = None
+    max_page: Optional[int] = None
+
+
+class DocumentDetail(BaseModel):
+    """Full document detail as returned by get_document_stats()."""
+    document: DocumentInfo
+    passages: DocumentPassageStats = Field(default_factory=DocumentPassageStats)
+    entities: DocumentEntityStats = Field(default_factory=DocumentEntityStats)
+    years: DocumentYearStats = Field(default_factory=DocumentYearStats)
+    pages: DocumentPageRange = Field(default_factory=DocumentPageRange)
+
+
+class IngestTaskInfo(BaseModel):
+    """Status of a background document ingestion task."""
+    task_id: str
+    status: str = Field(description="pending, running, completed, or failed")
+    document_id: Optional[str] = None
+    filename: Optional[str] = None
+    message: str = ""
+    created_at: str = Field(description="ISO 8601 timestamp")

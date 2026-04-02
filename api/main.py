@@ -1,30 +1,51 @@
 """
 Codex API Service
 
-FastAPI wrapper for the search functionality.
+FastAPI wrapper for search, document management, and streaming endpoints.
 """
 
 import sys
+import asyncio
 import logging
+import uuid
+import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 logger = logging.getLogger(__name__)
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional
 from psycopg2.extras import RealDictCursor
 
 from config import db_connection
-from documents import get_system_stats
-from search import search_codex
-from models import PassageDetail, DocumentInfo
+from documents import get_system_stats, get_document_stats
+from search import search_codex, analyze_query, hybrid_search, rerank_candidates, get_passage_details
+from answer_generator import stream_answer_with_llm
+from models import (
+    PassageDetail, DocumentInfo, QueryAnalysisInfo, QueryEntities,
+    DocumentDetail, IngestTaskInfo,
+)
 
-app = FastAPI(title="Codex Search API", version="1.0.0")
+app = FastAPI(title="Codex Search API", version="2.0.0")
+
+# CORS -- allow all origins during development
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
-# API-specific request/response models that reference shared models.
+# ---------------------------------------------------------------------------
+# Request / Response models
+# ---------------------------------------------------------------------------
 
 class SearchRequest(BaseModel):
     query: str
@@ -32,28 +53,46 @@ class SearchRequest(BaseModel):
     document_id: Optional[str] = None
 
 class SearchResult(BaseModel):
-    """API representation of a search result (includes snippet instead of full text)."""
+    """A single search result with full passage details."""
     passage_id: str
     title: str
     page: int
     snippet: str
+    text: str
+    headings_path: List[str] = []
     score: float
 
 class SearchResponse(BaseModel):
     query_type: str
+    query_analysis: QueryAnalysisInfo
     answer: str
     results: List[SearchResult]
+
+
+# ---------------------------------------------------------------------------
+# Background ingestion task store
+# ---------------------------------------------------------------------------
+
+_ingest_tasks: dict[str, dict] = {}
+
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
 
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
 
+
 @app.post("/search", response_model=SearchResponse)
 async def search(request: SearchRequest):
     """Search passages and generate an answer."""
     try:
-        result = search_codex(request.query, k=request.k, document_id=request.document_id)
+        result = await asyncio.to_thread(
+            search_codex, request.query, k=request.k, document_id=request.document_id
+        )
 
         search_results = []
         for r in result["results"]:
@@ -64,17 +103,122 @@ async def search(request: SearchRequest):
                 title=r["title"],
                 page=r["page"],
                 snippet=snippet,
-                score=r["score"]
+                text=text,
+                headings_path=r.get("headings_path") or [],
+                score=r["score"],
             ))
+
+        qa = result.get("query_analysis", {})
+        query_analysis = QueryAnalysisInfo(
+            query_type=qa.get("query_type", result["query_type"]),
+            person=qa.get("person"),
+            entities=QueryEntities(**qa.get("entities", {})),
+            expansions=qa.get("expansions", []),
+        )
 
         return SearchResponse(
             query_type=result["query_type"],
+            query_analysis=query_analysis,
             answer=result["answer"],
-            results=search_results
+            results=search_results,
         )
 
     except Exception as e:
+        logger.exception("Search failed")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def _sse_event(event: str, data) -> str:
+    """Format a Server-Sent Event string."""
+    import json as _json
+    payload = _json.dumps(data) if not isinstance(data, str) else data
+    return f"event: {event}\ndata: {payload}\n\n"
+
+
+@app.post("/search/stream")
+async def search_stream(request: SearchRequest):
+    """Stream search results + LLM answer via Server-Sent Events.
+
+    Events emitted:
+      - search_results: immediate results + query analysis
+      - token: individual LLM answer tokens
+      - done: signals completion
+      - error: on failure
+    """
+
+    async def _generate():
+        try:
+            qa = await asyncio.to_thread(analyze_query, request.query)
+
+            candidates = await asyncio.to_thread(
+                hybrid_search, request.query, 200, request.document_id
+            )
+
+            if not candidates:
+                yield _sse_event("search_results", {
+                    "query_type": qa["query_type"], "query_analysis": qa, "results": [],
+                })
+                yield _sse_event("token", "No candidates found.")
+                yield _sse_event("done", {})
+                return
+
+            def _rerank_and_detail():
+                with db_connection() as conn:
+                    reranked = rerank_candidates(candidates, request.query, conn, k=request.k)
+                    passage_ids = [pid for pid, _ in reranked]
+                    details = get_passage_details(conn, passage_ids)
+                    score_map = {pid: score for pid, score in reranked}
+                    for d in details:
+                        d["score"] = score_map.get(d["id"], 0.0)
+                    return details
+
+            passage_details = await asyncio.to_thread(_rerank_and_detail)
+
+            # Send search results immediately
+            results_payload = []
+            for r in passage_details:
+                text = r["text"]
+                results_payload.append({
+                    "passage_id": r["id"],
+                    "title": r["title"],
+                    "page": r["page"],
+                    "snippet": text[:200] + "..." if len(text) > 200 else text,
+                    "text": text,
+                    "headings_path": r.get("headings_path") or [],
+                    "score": r["score"],
+                })
+
+            yield _sse_event("search_results", {
+                "query_type": qa["query_type"],
+                "query_analysis": qa,
+                "results": results_payload,
+            })
+
+            # Stream LLM answer tokens
+            chunks = [
+                {"text": r["text"], "page": r["page"], "title": r["title"]}
+                for r in passage_details
+            ]
+
+            def _stream_tokens():
+                return list(stream_answer_with_llm(request.query, chunks))
+
+            tokens = await asyncio.to_thread(_stream_tokens)
+            for token in tokens:
+                yield _sse_event("token", token)
+
+            yield _sse_event("done", {})
+
+        except Exception as e:
+            logger.exception("Streaming search failed")
+            yield _sse_event("error", {"message": str(e)})
+
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
 
 @app.get("/documents", response_model=List[DocumentInfo])
 async def list_documents():
@@ -91,6 +235,104 @@ async def list_documents():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.get("/documents/{document_id}", response_model=DocumentDetail)
+async def get_document_detail(document_id: str):
+    """Get detailed information about a single document."""
+    try:
+        with db_connection() as conn:
+            stats = get_document_stats(conn, document_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    if stats is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    return stats
+
+
+@app.post("/documents/upload", status_code=202, response_model=IngestTaskInfo)
+async def upload_document(
+    file: UploadFile = File(...),
+    title: str = Form(""),
+    authors: str = Form(""),
+    pub_year: Optional[int] = Form(None),
+):
+    """Upload a document for ingestion. Returns a task ID for status polling.
+
+    Accepts PDF or TXT files. Ingestion runs in the background.
+    """
+    # Validate file type
+    filename = file.filename or "upload"
+    suffix = Path(filename).suffix.lower()
+    if suffix not in (".pdf", ".txt"):
+        raise HTTPException(status_code=400, detail="Only PDF and TXT files are accepted")
+
+    # Save to temp file
+    tmp_dir = Path(tempfile.gettempdir()) / "codex_uploads"
+    tmp_dir.mkdir(exist_ok=True)
+    dest = tmp_dir / f"{uuid.uuid4()}{suffix}"
+    content = await file.read()
+    dest.write_bytes(content)
+
+    task_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    _ingest_tasks[task_id] = {
+        "task_id": task_id,
+        "status": "pending",
+        "document_id": None,
+        "filename": filename,
+        "message": "Queued for ingestion",
+        "created_at": now,
+    }
+
+    asyncio.create_task(_run_ingestion(task_id, str(dest), title, authors, pub_year))
+
+    return _ingest_tasks[task_id]
+
+
+@app.get("/documents/upload/{task_id}", response_model=IngestTaskInfo)
+async def get_upload_status(task_id: str):
+    """Poll the status of a document upload/ingestion task."""
+    task = _ingest_tasks.get(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
+
+
+async def _run_ingestion(
+    task_id: str, file_path: str, title: str, authors: str, pub_year: Optional[int]
+):
+    """Background coroutine that runs ingest_document in a thread."""
+    task = _ingest_tasks[task_id]
+    task["status"] = "running"
+    task["message"] = "Ingesting document..."
+
+    try:
+        from ingest import ingest_document
+
+        doc_id = await asyncio.to_thread(
+            ingest_document,
+            file_path,
+            title=title or None,
+            authors=authors or None,
+            pub_year=pub_year,
+        )
+        task["status"] = "completed"
+        task["document_id"] = doc_id
+        task["message"] = "Ingestion complete"
+    except Exception as e:
+        logger.exception("Ingestion failed for task %s", task_id)
+        task["status"] = "failed"
+        task["message"] = str(e)
+    finally:
+        # Clean up temp file
+        try:
+            Path(file_path).unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
 @app.get("/stats")
 async def get_stats():
     """Get system statistics."""
@@ -99,6 +341,7 @@ async def get_stats():
             return get_system_stats(conn)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     import uvicorn

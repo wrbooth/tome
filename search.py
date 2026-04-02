@@ -282,15 +282,15 @@ def search_codex(query: str, k: int = 20, document_id: Optional[str] = None) -> 
     """
     Core search pipeline: hybrid search → rerank → answer generation.
 
-    Returns dict with keys: query_type, answer, results (list of dicts with
-    id, text, page, title, headings_path, score).
+    Returns dict with keys: query_type, query_analysis, answer, results (list of
+    dicts with id, text, page, title, headings_path, score).
     """
     query_analysis = analyze_query(query)
     query_type = query_analysis["query_type"]
 
     candidates = hybrid_search(query, k=200, document_id=document_id)
     if not candidates:
-        return {"query_type": query_type, "answer": "No candidates found.", "results": []}
+        return {"query_type": query_type, "query_analysis": query_analysis, "answer": "No candidates found.", "results": []}
 
     with db_connection() as conn:
         reranked = rerank_candidates(candidates, query, conn, k=k)
@@ -305,7 +305,7 @@ def search_codex(query: str, k: int = 20, document_id: Optional[str] = None) -> 
 
         answer = generate_answer(query, passage_details)
 
-    return {"query_type": query_type, "answer": answer, "results": passage_details}
+    return {"query_type": query_type, "query_analysis": query_analysis, "answer": answer, "results": passage_details}
 
 @click.command()
 @click.option('--q', 'query', required=True, help='Search query')
