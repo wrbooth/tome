@@ -16,17 +16,21 @@ _Everything else depends on this._
 
 6. ✅ **Tests** — 21 tests in `tests/test_api.py` covering all endpoints. Full suite: 324 tests passing.
 
-## Phase 2: Minimal Viable Frontend
+## Phase 2: Minimal Viable Frontend ✅ COMPLETE
 
 _The core loop: ask a question, get an answer, see sources._
 
-5. **Static file serving + base layout** — FastAPI serves the SPA. Shell layout with chat area and sidebar. Vanilla JS + Tailwind (no build step, keeps deployment trivial).
+0. ✅ **Fix streaming endpoint** — Replaced `list()` token buffering with `asyncio.Queue` bridge for true token-by-token streaming from sync generator to async SSE response.
 
-6. **Chat input + streaming answer display** — Text input, submit, stream the LLM answer into a chat bubble. This is the single most important UI element.
+1. ✅ **Add `/api/` prefix to all routes** — Moved all endpoints to `APIRouter(prefix="/api")` so API routes coexist cleanly with static file serving. All 21 tests updated.
 
-7. **Source citations as clickable expandables** — Parse `[Document Title, Page X]` references in the answer, make them clickable to expand the full passage text inline.
+5. ✅ **Static file serving + base layout** — FastAPI serves the SPA from `api/static/`. Shell layout with chat area and sidebar placeholder. Vanilla JS + Tailwind v4 CDN (no build step). CDN deps: `@tailwindcss/browser@4`, `marked.js`, `DOMPurify`.
 
-8. **Result cards below answer** — Collapsible passage cards showing title, page, heading path, score, and expandable full text.
+6. ✅ **Chat input + streaming answer display** — `fetch()` + `ReadableStream` SSE parser (POST endpoint), `requestAnimationFrame` token batching, typing indicator (bouncing dots), streaming cursor, markdown rendering via `marked.parse()` + DOMPurify sanitization.
+
+7. ✅ **Source citations as clickable expandables** — Parses `[Document Title, Page X]` references in the answer, replaces with native `<details>/<summary>` elements that expand full passage text inline.
+
+8. ✅ **Result cards below answer** — Collapsible passage cards showing title, page, heading path breadcrumb, score bar, and expandable full text. Appear immediately on `search_results` SSE event before LLM answer streams.
 
 ## Phase 3: Document Management
 
