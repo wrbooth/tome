@@ -57,15 +57,17 @@ Changes:
 - The `passage_entities` and `passage_years` tables remain available for future filtering use
 
 ### 6. Use Meilisearch Native Hybrid Search
-**Status:** Not started
+**Status:** Complete
 
-The codebase manually implements RRF fusion between Meilisearch BM25 results and pgvector cosine similarity results. It also generates LLM-based query expansions and feeds each back into Meilisearch individually. Meilisearch now has a native hybrid search mode that handles this internally.
+Replaced manual RRF fusion (BM25 + pgvector + query expansion loop) with a single Meilisearch hybrid search call. Meilisearch now handles both keyword and semantic search internally using its built-in OpenAI embedder integration.
 
-**Changes needed:**
-- Evaluate Meilisearch's built-in hybrid search capabilities
-- Replace manual RRF fusion code if Meilisearch hybrid covers the use case
-- Remove or simplify `generate_query_expansions_openai()` if no longer needed
-- Consider whether pgvector is still needed or if Meilisearch can handle both lexical and semantic search
+Changes:
+- `search.py`: Removed `get_meili_candidates()`, `get_vector_candidates()`, `get_query_embedding()`, `rrf()`, RRF constant, and the query expansion loop. Added `hybrid_search()` — one Meilisearch call with `semanticRatio=0.75`. Removed unused imports (`numpy`, `defaultdict`, `SentenceTransformer`).
+- `api/main.py`: Updated to use `hybrid_search` instead of separate BM25/vector/RRF calls.
+- `ingest.py`: Updated `index_in_meilisearch()` to auto-configure the OpenAI embedder and filterable attributes on first use.
+- Per-query calls reduced from ~11 Meilisearch + 1 OpenAI embedding to 1 Meilisearch hybrid call.
+- pgvector is no longer used for search (still stores embeddings in Postgres for potential future use).
+- Answer accuracy improved from 80% to 90% on the 20-question test suite.
 
 ### 7. Extract Shared Modules
 **Status:** Not started

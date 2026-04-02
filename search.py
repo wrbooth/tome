@@ -2,7 +2,7 @@
 """
 Codex Search Script
 
-Implements hybrid search with RRF fusion, query type detection, and specialized handling.
+Implements hybrid search via Meilisearch with cross-encoder re-ranking.
 """
 
 import os
@@ -11,18 +11,12 @@ import click
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
-import numpy as np
-from collections import defaultdict
 import json
 from typing import List, Dict, Any, Tuple, Optional
-from meilisearch import Client
-from sentence_transformers import SentenceTransformer
+from meilisearch import Client as MeiliClient
 import openai
 
 load_dotenv()
-
-# RRF parameters
-RRF_K = 60
 
 def get_db_connection():
     """Get database connection."""
@@ -33,10 +27,6 @@ def get_db_connection():
         user=os.getenv("DB_USER", "codex"),
         password=os.getenv("DB_PASSWORD", "codex")
     )
-
-def rrf(rank: int) -> float:
-    """Reciprocal rank fusion score."""
-    return 1.0 / (RRF_K + rank)
 
 def analyze_query(query: str) -> Dict[str, Any]:
     """
@@ -164,103 +154,36 @@ Given a user query, produce a JSON object with the following fields:
         print(f"Error in query analysis: {e}, using defaults")
         return default_result
 
-def get_meili_candidates(query: str, k: int = 200, document_id: Optional[str] = None) -> List[Tuple[str, int]]:
-    """Get BM25 candidates from Meilisearch."""
+def hybrid_search(query: str, k: int = 200, document_id: Optional[str] = None,
+                  semantic_ratio: float = 0.75) -> List[Tuple[str, float]]:
+    """Run hybrid (keyword + semantic) search via Meilisearch."""
     try:
-        from meilisearch import Client
-        
-        client = Client(
-            os.getenv("MEILI_URL", "http://localhost:7700")
-        )
-        
+        client = MeiliClient(os.getenv("MEILI_URL", "http://localhost:7700"))
         index = client.index("passages")
-        
-        # Build search parameters
+
         search_params = {
-            "q": query,
+            "hybrid": {
+                "semanticRatio": semantic_ratio,
+                "embedder": "default"
+            },
             "limit": k,
-            "attributesToRetrieve": ["id"]
+            "attributesToRetrieve": ["id"],
+            "showRankingScore": True
         }
-        
+
         if document_id:
-            search_params["filter"] = f"document_id = {document_id}"
-        
+            search_params["filter"] = f"document_id = '{document_id}'"
+
         response = index.search(query, search_params)
-        
-        # Extract passage IDs and ranks
-        candidates = []
-        for i, hit in enumerate(response["hits"]):
-            candidates.append((hit["id"], i + 1))  # rank starts at 1
-        
-        return candidates
-        
-    except ImportError:
-        print("Warning: Meilisearch client not available")
-        return []
-    except Exception as e:
-        print(f"Warning: Failed to get Meilisearch candidates: {e}")
-        return []
 
-def get_vector_candidates(query: str, k: int = 200, document_id: Optional[str] = None) -> List[Tuple[str, int]]:
-    """Get vector similarity candidates from pgvector."""
-    try:
-        # Get query embedding
-        query_embedding = get_query_embedding(query)
-        if not query_embedding:
-            return []
-        
-        conn = get_db_connection()
-        
-        # Build query
-        sql = """
-            SELECT id, 1 - (embedding <=> %s::vector) as similarity
-            FROM passages 
-            WHERE embedding IS NOT NULL
-        """
-        params = [query_embedding]
-        
-        if document_id:
-            sql += " AND document_id = %s"
-            params.append(document_id)
-        
-        sql += " ORDER BY embedding <=> %s::vector LIMIT %s"
-        params.extend([query_embedding, k])
-        
-        with conn.cursor() as cur:
-            cur.execute(sql, params)
-            results = cur.fetchall()
-        
-        conn.close()
-        
-        # Return passage IDs with ranks
-        return [(row[0], i + 1) for i, row in enumerate(results)]
-        
-    except Exception as e:
-        print(f"Warning: Failed to get vector candidates: {e}")
-        return []
+        return [
+            (hit["id"], hit.get("_rankingScore", 0.0))
+            for hit in response["hits"]
+        ]
 
-def get_query_embedding(query: str) -> Optional[List[float]]:
-    """Get embedding for query text using OpenAI."""
-    try:
-        # Ensure .env is loaded
-        load_dotenv()
-        
-        # Check if OpenAI API key is available
-        if not os.getenv('OPENAI_API_KEY'):
-            print("Error: OPENAI_API_KEY not found in environment")
-            return None
-        
-        client = openai.OpenAI()
-        response = client.embeddings.create(
-            model="text-embedding-3-small",
-            input=query,
-            encoding_format="float"
-        )
-        return response.data[0].embedding
-        
     except Exception as e:
-        print(f"Warning: Failed to get query embedding: {e}")
-        return None
+        print(f"Warning: Hybrid search failed: {e}")
+        return []
 
 def _get_reranker():
     """Lazy-load the cross-encoder re-ranker model."""
@@ -393,59 +316,19 @@ def main(query: str, k: int, document_id: Optional[str]):
     query_type = query_analysis["query_type"]
     print(f"Query type: {query_type}")
 
-    expansions = query_analysis["expansions"]
-    if len(expansions) > 1:
-        print(f"Query expansions: {expansions[1:]}")  # Skip the original query
-    
-    # Get candidates from both sources using original query AND expansions
-    print("Getting BM25 candidates...")
-    meili_candidates = get_meili_candidates(query, k=200, document_id=document_id)
-    
-    # Add candidates from expansions
-    for expansion in expansions[1:]:  # Skip original query
-        expansion_candidates = get_meili_candidates(expansion, k=50, document_id=document_id)
-        meili_candidates.extend(expansion_candidates)
-    
-    # Remove duplicates while preserving order
-    seen_ids = set()
-    unique_meili_candidates = []
-    for passage_id, rank in meili_candidates:
-        if passage_id not in seen_ids:
-            seen_ids.add(passage_id)
-            unique_meili_candidates.append((passage_id, rank))
-    
-    meili_candidates = unique_meili_candidates[:200]  # Keep top 200
-    print(f"Found {len(meili_candidates)} BM25 candidates")
-    
-    print("Getting vector candidates...")
-    vector_candidates = get_vector_candidates(query, k=200, document_id=document_id)
-    print(f"Found {len(vector_candidates)} vector candidates")
-    
-    if not meili_candidates and not vector_candidates:
+    # Hybrid search (keyword + semantic in one Meilisearch call)
+    print("Running hybrid search...")
+    candidates = hybrid_search(query, k=200, document_id=document_id)
+    print(f"Found {len(candidates)} candidates")
+
+    if not candidates:
         print("No candidates found")
         return
-    
-    # Apply RRF fusion
-    print("Applying RRF fusion...")
-    scores = defaultdict(float)
-    
-    for passage_id, rank in meili_candidates:
-        scores[passage_id] += rrf(rank)
-    
-    for passage_id, rank in vector_candidates:
-        scores[passage_id] += rrf(rank)
-    
-    # Sort by score and take top k
-    top_candidates = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:k]
-    
-    if not top_candidates:
-        print("No results after fusion")
-        return
-    
+
     # Re-rank with cross-encoder
     conn = get_db_connection()
     print("Re-ranking with cross-encoder...")
-    reranked_candidates = rerank_candidates(top_candidates, query, conn, k=k)
+    reranked_candidates = rerank_candidates(candidates, query, conn, k=k)
     
     # Get passage details
     passage_ids = [pid for pid, _ in reranked_candidates]

@@ -52,39 +52,20 @@ async def search(request: SearchRequest):
         sys.path.append('..')
         
         from search import (
-            get_meili_candidates,
-            get_vector_candidates,
-            rrf,
+            hybrid_search,
             rerank_candidates,
             get_passage_details,
         )
 
-        # Get candidates from both sources
-        meili_candidates = get_meili_candidates(request.query, k=200, document_id=request.document_id)
-        vector_candidates = get_vector_candidates(request.query, k=200, document_id=request.document_id)
-        
-        if not meili_candidates and not vector_candidates:
+        # Hybrid search (keyword + semantic in one Meilisearch call)
+        candidates = hybrid_search(request.query, k=200, document_id=request.document_id)
+
+        if not candidates:
             return []
-        
-        # Apply RRF fusion
-        from collections import defaultdict
-        scores = defaultdict(float)
-        
-        for passage_id, rank in meili_candidates:
-            scores[passage_id] += rrf(rank)
-        
-        for passage_id, rank in vector_candidates:
-            scores[passage_id] += rrf(rank)
-        
-        # Sort by score and take top k
-        top_candidates = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:request.k]
-        
-        if not top_candidates:
-            return []
-        
+
         # Re-rank with cross-encoder
         conn = get_db_connection()
-        reranked_candidates = rerank_candidates(top_candidates, request.query, conn, k=request.k)
+        reranked_candidates = rerank_candidates(candidates, request.query, conn, k=request.k)
 
         # Get passage details
         passage_ids = [pid for pid, _ in reranked_candidates]

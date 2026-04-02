@@ -580,8 +580,30 @@ def index_in_meilisearch(passages: List[Dict[str, Any]], passage_ids: List[str],
         
         # Create or update index
         index = client.index("passages")
+
+        # Ensure OpenAI embedder is configured for hybrid search
+        settings = index.get_settings()
+        if not settings.get("embedders"):
+            openai_key = os.getenv("OPENAI_API_KEY")
+            if openai_key:
+                task = index.update_embedders({
+                    "default": {
+                        "source": "openAi",
+                        "apiKey": openai_key,
+                        "model": "text-embedding-3-small",
+                        "documentTemplate": "{{doc.text}}"
+                    }
+                })
+                client.wait_for_task(task.task_uid, timeout_in_ms=60000)
+
+        # Ensure document_id is filterable
+        filterable = settings.get("filterableAttributes", [])
+        if "document_id" not in filterable:
+            task = index.update_filterable_attributes(filterable + ["document_id"])
+            client.wait_for_task(task.task_uid, timeout_in_ms=60000)
+
         index.add_documents(documents, primary_key="id")
-        
+
         print(f"Indexed {len(documents)} passages in Meilisearch for document {doc_id}")
         
     except ImportError:
