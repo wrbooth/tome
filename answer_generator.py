@@ -3,12 +3,22 @@
 LLM-based answer generation for search results.
 """
 
-import json
+import logging
 from typing import List, Dict, Any, Optional
 
 from config import get_openai_client, ANSWER_MODEL
 
-client = get_openai_client()
+logger = logging.getLogger(__name__)
+
+_client = None
+
+
+def _get_client():
+    """Lazily create the OpenAI client on first use."""
+    global _client
+    if _client is None:
+        _client = get_openai_client()
+    return _client
 
 def format_chunks_for_llm(chunks: List[Dict[str, Any]]) -> str:
     """
@@ -85,7 +95,7 @@ Please answer the question based ONLY on the information provided above. If the 
 
     try:
         # Call the LLM
-        response = client.chat.completions.create(
+        response = _get_client().chat.completions.create(
             model=model,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -218,6 +228,8 @@ if __name__ == "__main__":
         }
     ]
     
+    from config import configure_logging
+    configure_logging()
     result = answer_query(test_query, test_chunks)
-    print("Test Answer:")
-    print(result)
+    logger.info("Test Answer:")
+    logger.info(result)

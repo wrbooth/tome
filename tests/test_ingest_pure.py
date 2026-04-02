@@ -51,15 +51,15 @@ class TestCountTokens:
 
     def test_single_word(self):
         result = count_tokens("hello")
-        assert result >= 1
+        assert result == 1
 
     def test_known_sentence(self):
         result = count_tokens("The quick brown fox jumps over the lazy dog.")
-        assert result > 0
+        assert result == 10
 
     def test_whitespace_only(self):
         result = count_tokens("   ")
-        assert result >= 0
+        assert result <= 1
 
     def test_unicode(self):
         result = count_tokens("Caf\u00e9 na\u00efve r\u00e9sum\u00e9")
@@ -352,7 +352,7 @@ class TestExtractEntitiesAndYears:
 
     def test_no_years_returns_empty(self):
         entities, years = extract_entities_and_years("No dates mentioned here at all.")
-        assert all(isinstance(y, int) for y in years)
+        assert years == [], f"Expected empty list but got {years}"
 
     def test_entities_have_correct_keys(self):
         entities, years = extract_entities_and_years(
@@ -371,7 +371,7 @@ class TestExtractEntitiesAndYears:
             assert entity["norm_entity"] == entity["entity"].lower()
 
     def test_nlp_none_returns_empty_entities(self):
-        with patch("ingest.nlp", None):
+        with patch("entities._get_nlp", return_value=None):
             entities, years = extract_entities_and_years(
                 "George Washington in 1776."
             )
@@ -476,16 +476,16 @@ class TestMergeHeadingResults:
     def test_empty_list(self):
         assert merge_heading_results([]) == []
 
-    def test_missing_confidence_key_crashes(self):
+    def test_missing_confidence_key_uses_default(self):
         """When first heading has no confidence key and second does,
-        the comparison grouped[key]['confidence'] raises KeyError.
-        This documents a known bug in merge_heading_results."""
+        the second heading (with higher confidence) wins."""
         headings = [
             {"title": "No Confidence", "page": 0, "line_number": 0},
             {"title": "no confidence", "page": 0, "confidence": 0.1, "line_number": 0},
         ]
-        with pytest.raises(KeyError):
-            merge_heading_results(headings)
+        result = merge_heading_results(headings)
+        assert len(result) == 1
+        assert result[0]["confidence"] == 0.1
 
     def test_both_have_confidence(self):
         """When both headings have confidence, higher wins."""

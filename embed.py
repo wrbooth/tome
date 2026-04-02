@@ -5,15 +5,15 @@ Codex Embedding Generation Script
 Generates embeddings for passages using OpenAI or local models.
 """
 
-import os
 import sys
+import logging
 import click
 from psycopg2.extras import RealDictCursor
-import numpy as np
 from typing import List, Dict, Any, Optional
-import tiktoken
 
-from config import get_db_connection, get_openai_client, EMBEDDING_MODEL
+from config import db_connection, get_openai_client, EMBEDDING_MODEL, configure_logging
+
+logger = logging.getLogger(__name__)
 
 def get_openai_embeddings(texts: List[str], model: str = EMBEDDING_MODEL) -> List[List[float]]:
     """Get embeddings from OpenAI API."""
@@ -37,15 +37,15 @@ def get_openai_embeddings(texts: List[str], model: str = EMBEDDING_MODEL) -> Lis
             batch_embeddings = [data.embedding for data in response.data]
             embeddings.extend(batch_embeddings)
             
-            print(f"Processed batch {i//batch_size + 1}/{(len(texts) + batch_size - 1)//batch_size}")
-        
+            logger.info("Processed batch %d/%d", i//batch_size + 1, (len(texts) + batch_size - 1)//batch_size)
+
         return embeddings
-        
+
     except ImportError:
-        print("Error: OpenAI client not available. Install with: pip install openai")
+        logger.error("OpenAI client not available. Install with: uv add openai")
         return []
     except Exception as e:
-        print(f"Error getting OpenAI embeddings: {e}")
+        logger.error("Error getting OpenAI embeddings: %s", e)
         return []
 
 def get_local_embeddings(texts: List[str], model_name: str = "intfloat/e5-base-v2") -> List[List[float]]:
@@ -60,10 +60,10 @@ def get_local_embeddings(texts: List[str], model_name: str = "intfloat/e5-base-v
         return embeddings.tolist()
         
     except ImportError:
-        print("Error: sentence-transformers not available. Install with: pip install sentence-transformers")
+        logger.error("sentence-transformers not available. Install with: uv add sentence-transformers")
         return []
     except Exception as e:
-        print(f"Error getting local embeddings: {e}")
+        logger.error("Error getting local embeddings: %s", e)
         return []
 
 def get_unembedded_passages(conn, limit: int = 1000, document_id: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -110,62 +110,59 @@ def run_embeddings(document_ids: Optional[List[str]] = None, provider: str = "op
     Can be called directly from Python (e.g. batch_reingest) or via the CLI.
     Returns True on success.
     """
-    conn = get_db_connection()
-    print("Connected to database")
+    with db_connection() as conn:
+        logger.info("Connected to database")
 
-    if document_ids:
-        print(f"Processing documents: {', '.join(document_ids)}")
-        all_passages = []
-        for doc_id in document_ids:
-            all_passages.extend(get_unembedded_passages(conn, limit, doc_id))
-        passages = all_passages[:limit]
-    else:
-        passages = get_unembedded_passages(conn, limit)
+        if document_ids:
+            logger.info("Processing documents: %s", ', '.join(document_ids))
+            all_passages = []
+            for doc_id in document_ids:
+                all_passages.extend(get_unembedded_passages(conn, limit, doc_id))
+            passages = all_passages[:limit]
+        else:
+            passages = get_unembedded_passages(conn, limit)
 
-    if not passages:
-        print("No passages found without embeddings")
-        conn.close()
+        if not passages:
+            logger.info("No passages found without embeddings")
+            return True
+
+        logger.info("Found %d passages without embeddings", len(passages))
+
+        texts = [p['text'] for p in passages]
+        passage_ids = [p['id'] for p in passages]
+
+        logger.info("Generating embeddings using %s provider...", provider)
+        if provider == 'openai':
+            embeddings = get_openai_embeddings(texts, model)
+        else:
+            embeddings = get_local_embeddings(texts, model)
+
+        if not embeddings:
+            logger.error("Failed to generate embeddings")
+            return False
+
+        logger.info("Generated %d embeddings", len(embeddings))
+        if embeddings:
+            dim = len(embeddings[0])
+            logger.info("Embedding dimension: %d", dim)
+            if not validate_embedding_dimension(embeddings[0]):
+                logger.warning("Expected dimension 1536, got %d", dim)
+
+        logger.info("Updating database...")
+        passage_embeddings = list(zip(passage_ids, embeddings))
+        for i in range(0, len(passage_embeddings), batch_size):
+            batch = passage_embeddings[i:i + batch_size]
+            update_passage_embeddings(conn, batch)
+            logger.info("Updated batch %d/%d", i//batch_size + 1, (len(passage_embeddings) + batch_size - 1)//batch_size)
+
+        remaining = get_unembedded_passages(conn, 1)
+        if remaining:
+            logger.info("Note: %d passages still need embeddings", len(remaining))
+        else:
+            logger.info("All passages now have embeddings!")
+
+        logger.info("Embedding generation complete!")
         return True
-
-    print(f"Found {len(passages)} passages without embeddings")
-
-    texts = [p['text'] for p in passages]
-    passage_ids = [p['id'] for p in passages]
-
-    print(f"Generating embeddings using {provider} provider...")
-    if provider == 'openai':
-        embeddings = get_openai_embeddings(texts, model)
-    else:
-        embeddings = get_local_embeddings(texts, model)
-
-    if not embeddings:
-        print("Failed to generate embeddings")
-        conn.close()
-        return False
-
-    print(f"Generated {len(embeddings)} embeddings")
-    if embeddings:
-        dim = len(embeddings[0])
-        print(f"Embedding dimension: {dim}")
-        if not validate_embedding_dimension(embeddings[0]):
-            print(f"Warning: Expected dimension 1536, got {dim}")
-
-    print("Updating database...")
-    passage_embeddings = list(zip(passage_ids, embeddings))
-    for i in range(0, len(passage_embeddings), batch_size):
-        batch = passage_embeddings[i:i + batch_size]
-        update_passage_embeddings(conn, batch)
-        print(f"Updated batch {i//batch_size + 1}/{(len(passage_embeddings) + batch_size - 1)//batch_size}")
-
-    remaining = get_unembedded_passages(conn, 1)
-    if remaining:
-        print(f"Note: {len(remaining)} passages still need embeddings")
-    else:
-        print("All passages now have embeddings!")
-
-    conn.close()
-    print("Embedding generation complete!")
-    return True
 
 @click.command()
 @click.option('--provider', default='openai', type=click.Choice(['openai', 'local']),
@@ -180,6 +177,7 @@ def run_embeddings(document_ids: Optional[List[str]] = None, provider: str = "op
 @click.option('--documents', help='Comma-separated list of document IDs')
 def main(provider: str, model: str, batch_size: int, limit: int, document_id: Optional[str], documents: Optional[str]):
     """Generate embeddings for passages that don't have them yet."""
+    configure_logging()
     doc_ids = None
     if document_id:
         doc_ids = [document_id]

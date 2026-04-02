@@ -9,15 +9,49 @@ Provides commands for managing documents in the system:
 - Get document details
 """
 
-import os
 import sys
+import logging
 import click
 from psycopg2.extras import RealDictCursor
 from typing import List, Dict, Any, Optional
 import json
 from tabulate import tabulate
 
-from config import get_db_connection, get_meili_client
+from config import db_connection, get_meili_client, configure_logging
+
+logger = logging.getLogger(__name__)
+
+def get_system_stats(conn) -> Dict[str, Any]:
+    """Get overall system statistics.
+
+    Returns a dict with keys: documents, passages, embedded_passages,
+    entities, years, and embedding_coverage (formatted string).
+    """
+    with conn.cursor() as cur:
+        cur.execute("SELECT COUNT(*) FROM documents")
+        doc_count = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM passages")
+        passage_count = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM passages WHERE embedding IS NOT NULL")
+        embedded_count = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM passage_entities")
+        entity_count = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM passage_years")
+        year_count = cur.fetchone()[0]
+
+    return {
+        "documents": doc_count,
+        "passages": passage_count,
+        "embedded_passages": embedded_count,
+        "entities": entity_count,
+        "years": year_count,
+        "embedding_coverage": f"{(embedded_count / passage_count * 100):.1f}%" if passage_count > 0 else "0%",
+    }
+
 
 def get_document_stats(conn, document_id: str) -> Dict[str, Any]:
     """Get detailed stats for a document."""
@@ -76,7 +110,7 @@ def get_document_stats(conn, document_id: str) -> Dict[str, Any]:
             'pages': dict(page_stats)
         }
 
-def list_documents(conn, format: str = 'table') -> List[Dict[str, Any]]:
+def list_documents(conn) -> List[Dict[str, Any]]:
     """List all documents with basic stats."""
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
@@ -104,38 +138,34 @@ def delete_document(conn, document_id: str, confirm: bool = True) -> bool:
             cur.execute("SELECT title FROM documents WHERE id = %s", (document_id,))
             doc = cur.fetchone()
             if not doc:
-                print(f"Document {document_id} not found")
+                logger.warning("Document %s not found", document_id)
                 return False
-            
+
             # Get passage count
             cur.execute("SELECT COUNT(*) FROM passages WHERE document_id = %s", (document_id,))
             passage_count = cur.fetchone()[0]
-            
-            print(f"About to delete document: {doc['title']}")
-            print(f"This will also delete {passage_count} passages")
-            
+
+            logger.info("About to delete document: %s", doc['title'])
+            logger.info("This will also delete %d passages", passage_count)
+
             if not click.confirm("Are you sure you want to continue?"):
-                print("Deletion cancelled")
+                logger.info("Deletion cancelled")
                 return False
     
     try:
         with conn.cursor() as cur:
-            # Delete passages first (cascade will handle related tables)
-            cur.execute("DELETE FROM passages WHERE document_id = %s", (document_id,))
-            passage_deleted = cur.rowcount
-            
-            # Delete document
+            # Delete document (passages are removed via ON DELETE CASCADE)
             cur.execute("DELETE FROM documents WHERE id = %s", (document_id,))
             doc_deleted = cur.rowcount
-            
+
             conn.commit()
-            
-            print(f"Deleted {doc_deleted} document and {passage_deleted} passages")
+
+            logger.info("Deleted %d document (passages cascaded)", doc_deleted)
             return True
-            
+
     except Exception as e:
         conn.rollback()
-        print(f"Error deleting document: {e}")
+        logger.error("Error deleting document: %s", e)
         return False
 
 def reindex_document_meilisearch(conn, document_id: str) -> bool:
@@ -152,7 +182,7 @@ def reindex_document_meilisearch(conn, document_id: str) -> bool:
             passages = cur.fetchall()
         
         if not passages:
-            print(f"No passages found for document {document_id}")
+            logger.warning("No passages found for document %s", document_id)
             return False
         
         # Prepare documents for indexing
@@ -161,8 +191,7 @@ def reindex_document_meilisearch(conn, document_id: str) -> bool:
         documents = []
         for passage in passages:
             # Extract entities and years
-            _, years = extract_entities_and_years(passage['text'])
-            entities, _ = extract_entities_and_years(passage['text'])
+            entities, years = extract_entities_and_years(passage['text'])
             
             person_entities = [e["entity"] for e in entities if e["ent_type"] == "PERSON"]
             place_entities = [e["entity"] for e in entities if e["ent_type"] in ["GPE", "FAC"]]
@@ -183,14 +212,14 @@ def reindex_document_meilisearch(conn, document_id: str) -> bool:
         index = client.index("passages")
         index.add_documents(documents, primary_key="id")
         
-        print(f"Re-indexed {len(documents)} passages for document {document_id}")
+        logger.info("Re-indexed %d passages for document %s", len(documents), document_id)
         return True
-        
+
     except ImportError:
-        print("Warning: Meilisearch client not available")
+        logger.warning("Meilisearch client not available")
         return False
     except Exception as e:
-        print(f"Error re-indexing document: {e}")
+        logger.error("Error re-indexing document: %s", e)
         return False
 
 @click.group()
@@ -199,47 +228,45 @@ def cli():
     pass
 
 @cli.command()
-@click.option('--format', default='table', type=click.Choice(['table', 'json']), 
+@click.option('--format', default='table', type=click.Choice(['table', 'json']),
               help='Output format')
 def list(format: str):
     """List all documents with stats."""
+    configure_logging()
     try:
-        conn = get_db_connection()
-        documents = list_documents(conn, format)
-        
-        if format == 'json':
-            print(json.dumps(documents, indent=2))
-        else:
-            if not documents:
-                print("No documents found")
-                return
-            
-            # Prepare table data
-            table_data = []
-            for doc in documents:
-                authors = ', '.join(doc['authors']) if doc['authors'] else 'Unknown'
-                embedding_pct = f"{(doc['embedded_count']/doc['passage_count']*100):.1f}%" if doc['passage_count'] > 0 else "0%"
-                page_range = f"{doc['min_page']}-{doc['max_page']}" if doc['min_page'] and doc['max_page'] else "N/A"
-                
-                table_data.append([
-                    doc['id'][:8] + '...',
-                    doc['title'][:50] + ('...' if len(doc['title']) > 50 else ''),
-                    authors[:30] + ('...' if len(authors) > 30 else ''),
-                    doc['pub_year'] or 'Unknown',
-                    doc['passage_count'],
-                    f"{doc['embedded_count']} ({embedding_pct})",
-                    page_range
-                ])
-            
-            headers = ['ID', 'Title', 'Authors', 'Year', 'Passages', 'Embedded', 'Pages']
-            print(tabulate(table_data, headers=headers, tablefmt='grid'))
-            
+        with db_connection() as conn:
+            documents = list_documents(conn)
+
+            if format == 'json':
+                click.echo(json.dumps(documents, indent=2))
+            else:
+                if not documents:
+                    click.echo("No documents found")
+                    return
+
+                # Prepare table data
+                table_data = []
+                for doc in documents:
+                    authors = ', '.join(doc['authors']) if doc['authors'] else 'Unknown'
+                    embedding_pct = f"{(doc['embedded_count']/doc['passage_count']*100):.1f}%" if doc['passage_count'] > 0 else "0%"
+                    page_range = f"{doc['min_page']}-{doc['max_page']}" if doc['min_page'] and doc['max_page'] else "N/A"
+
+                    table_data.append([
+                        doc['id'][:8] + '...',
+                        doc['title'][:50] + ('...' if len(doc['title']) > 50 else ''),
+                        authors[:30] + ('...' if len(authors) > 30 else ''),
+                        doc['pub_year'] or 'Unknown',
+                        doc['passage_count'],
+                        f"{doc['embedded_count']} ({embedding_pct})",
+                        page_range
+                    ])
+
+                headers = ['ID', 'Title', 'Authors', 'Year', 'Passages', 'Embedded', 'Pages']
+                click.echo(tabulate(table_data, headers=headers, tablefmt='grid'))
+
     except Exception as e:
-        print(f"Error listing documents: {e}")
+        logger.error("Error listing documents: %s", e)
         sys.exit(1)
-    finally:
-        if 'conn' in locals():
-            conn.close()
 
 @cli.command()
 @click.argument('document_id')
@@ -247,128 +274,99 @@ def list(format: str):
               help='Output format')
 def info(document_id: str, format: str):
     """Get detailed information about a document."""
+    configure_logging()
     try:
-        conn = get_db_connection()
-        stats = get_document_stats(conn, document_id)
-        
-        if not stats:
-            print(f"Document {document_id} not found")
-            sys.exit(1)
-        
-        if format == 'json':
-            print(json.dumps(stats, indent=2))
-        else:
-            doc = stats['document']
-            passages = stats['passages']
-            entities = stats['entities']
-            years = stats['years']
-            pages = stats['pages']
-            
-            print(f"Document: {doc['title']}")
-            print(f"ID: {doc['id']}")
-            print(f"Authors: {', '.join(doc['authors']) if doc['authors'] else 'Unknown'}")
-            print(f"Year: {doc['pub_year'] or 'Unknown'}")
-            print(f"Source: {doc['source_path']}")
-            print()
-            
-            print("Statistics:")
-            print(f"  Passages: {passages['total_passages']} total, {passages['embedded_passages']} embedded")
-            print(f"  Entities: {entities['entity_count']}")
-            print(f"  Years: {years['year_count']}")
-            print(f"  Pages: {pages['min_page']} - {pages['max_page']}")
-            
-            if passages['total_passages'] > 0:
-                embedding_pct = (passages['embedded_passages'] / passages['total_passages']) * 100
-                print(f"  Embedding coverage: {embedding_pct:.1f}%")
-            
+        with db_connection() as conn:
+            stats = get_document_stats(conn, document_id)
+
+            if not stats:
+                click.echo(f"Document {document_id} not found")
+                sys.exit(1)
+
+            if format == 'json':
+                click.echo(json.dumps(stats, indent=2))
+            else:
+                doc = stats['document']
+                passages = stats['passages']
+                entities = stats['entities']
+                years = stats['years']
+                pages = stats['pages']
+
+                click.echo(f"Document: {doc['title']}")
+                click.echo(f"ID: {doc['id']}")
+                click.echo(f"Authors: {', '.join(doc['authors']) if doc['authors'] else 'Unknown'}")
+                click.echo(f"Year: {doc['pub_year'] or 'Unknown'}")
+                click.echo(f"Source: {doc['source_path']}")
+                click.echo()
+
+                click.echo("Statistics:")
+                click.echo(f"  Passages: {passages['total_passages']} total, {passages['embedded_passages']} embedded")
+                click.echo(f"  Entities: {entities['entity_count']}")
+                click.echo(f"  Years: {years['year_count']}")
+                click.echo(f"  Pages: {pages['min_page']} - {pages['max_page']}")
+
+                if passages['total_passages'] > 0:
+                    embedding_pct = (passages['embedded_passages'] / passages['total_passages']) * 100
+                    click.echo(f"  Embedding coverage: {embedding_pct:.1f}%")
+
     except Exception as e:
-        print(f"Error getting document info: {e}")
+        logger.error("Error getting document info: %s", e)
         sys.exit(1)
-    finally:
-        if 'conn' in locals():
-            conn.close()
 
 @cli.command()
 @click.argument('document_id')
 @click.option('--force', is_flag=True, help='Skip confirmation')
 def delete(document_id: str, force: bool):
     """Delete a document and all its passages."""
+    configure_logging()
     try:
-        conn = get_db_connection()
-        success = delete_document(conn, document_id, confirm=not force)
-        
-        if not success:
-            sys.exit(1)
-            
+        with db_connection() as conn:
+            success = delete_document(conn, document_id, confirm=not force)
+
+            if not success:
+                sys.exit(1)
+
     except Exception as e:
-        print(f"Error deleting document: {e}")
+        logger.error("Error deleting document: %s", e)
         sys.exit(1)
-    finally:
-        if 'conn' in locals():
-            conn.close()
 
 @cli.command()
 @click.argument('document_id')
 def reindex(document_id: str):
     """Re-index a document in Meilisearch."""
+    configure_logging()
     try:
-        conn = get_db_connection()
-        success = reindex_document_meilisearch(conn, document_id)
-        
-        if not success:
-            sys.exit(1)
-            
+        with db_connection() as conn:
+            success = reindex_document_meilisearch(conn, document_id)
+
+            if not success:
+                sys.exit(1)
+
     except Exception as e:
-        print(f"Error re-indexing document: {e}")
+        logger.error("Error re-indexing document: %s", e)
         sys.exit(1)
-    finally:
-        if 'conn' in locals():
-            conn.close()
 
 @cli.command()
 def stats():
     """Get overall system statistics."""
+    configure_logging()
     try:
-        conn = get_db_connection()
-        
-        with conn.cursor() as cur:
-            # Document count
-            cur.execute("SELECT COUNT(*) FROM documents")
-            doc_count = cur.fetchone()[0]
-            
-            # Passage count
-            cur.execute("SELECT COUNT(*) FROM passages")
-            passage_count = cur.fetchone()[0]
-            
-            # Embedded passages
-            cur.execute("SELECT COUNT(*) FROM passages WHERE embedding IS NOT NULL")
-            embedded_count = cur.fetchone()[0]
-            
-            # Entity count
-            cur.execute("SELECT COUNT(*) FROM passage_entities")
-            entity_count = cur.fetchone()[0]
-            
-            # Year count
-            cur.execute("SELECT COUNT(*) FROM passage_years")
-            year_count = cur.fetchone()[0]
-        
-        print("System Statistics:")
-        print(f"  Documents: {doc_count}")
-        print(f"  Passages: {passage_count}")
-        print(f"  Embedded passages: {embedded_count}")
-        print(f"  Entities: {entity_count}")
-        print(f"  Years: {year_count}")
-        
-        if passage_count > 0:
-            embedding_pct = (embedded_count / passage_count) * 100
-            print(f"  Embedding coverage: {embedding_pct:.1f}%")
-            
+        with db_connection() as conn:
+            s = get_system_stats(conn)
+
+            click.echo("System Statistics:")
+            click.echo(f"  Documents: {s['documents']}")
+            click.echo(f"  Passages: {s['passages']}")
+            click.echo(f"  Embedded passages: {s['embedded_passages']}")
+            click.echo(f"  Entities: {s['entities']}")
+            click.echo(f"  Years: {s['years']}")
+
+            if s['passages'] > 0:
+                click.echo(f"  Embedding coverage: {s['embedding_coverage']}")
+
     except Exception as e:
-        print(f"Error getting system stats: {e}")
+        logger.error("Error getting system stats: %s", e)
         sys.exit(1)
-    finally:
-        if 'conn' in locals():
-            conn.close()
 
 if __name__ == "__main__":
     cli()

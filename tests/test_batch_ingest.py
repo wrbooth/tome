@@ -110,54 +110,40 @@ class TestGetDocumentFiles:
 
 class TestIngestSingleDocument:
     def test_success(self):
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = "Ingestion complete!"
-        with patch("batch_ingest.subprocess.run", return_value=mock_result):
+        with patch("batch_ingest.ingest_document", return_value="doc-123") as mock_ingest:
             result = ingest_single_document("/path/doc.pdf", {"title": "Doc"})
             assert result["status"] == "success"
             assert result["file_path"] == "/path/doc.pdf"
-
-    def test_error_return_code(self):
-        mock_result = MagicMock()
-        mock_result.returncode = 1
-        mock_result.stderr = "Error: file not found"
-        with patch("batch_ingest.subprocess.run", return_value=mock_result):
-            result = ingest_single_document("/path/doc.pdf", {"title": "Doc"})
-            assert result["status"] == "error"
+            mock_ingest.assert_called_once_with(
+                "/path/doc.pdf", title="Doc", authors=None, pub_year=None, debug=False
+            )
 
     def test_exception_returns_error(self):
-        with patch("batch_ingest.subprocess.run", side_effect=Exception("Process failed")):
+        with patch("batch_ingest.ingest_document", side_effect=Exception("Process failed")):
             result = ingest_single_document("/path/doc.pdf", {"title": "Doc"})
             assert result["status"] == "error"
             assert "Process failed" in result["error"]
 
     def test_authors_list_converted_to_string(self):
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = ""
-        with patch("batch_ingest.subprocess.run", return_value=mock_result) as mock_run:
+        with patch("batch_ingest.ingest_document", return_value="doc-123") as mock_ingest:
             ingest_single_document("/path/doc.pdf", {"title": "Doc", "authors": ["A", "B"]})
-            cmd = mock_run.call_args[0][0]
-            assert "A,B" in cmd
+            mock_ingest.assert_called_once_with(
+                "/path/doc.pdf", title="Doc", authors="A,B", pub_year=None, debug=False
+            )
 
-    def test_pub_year_converted_to_string(self):
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = ""
-        with patch("batch_ingest.subprocess.run", return_value=mock_result) as mock_run:
+    def test_pub_year_converted_to_int(self):
+        with patch("batch_ingest.ingest_document", return_value="doc-123") as mock_ingest:
             ingest_single_document("/path/doc.pdf", {"title": "Doc", "pub_year": 2000})
-            cmd = mock_run.call_args[0][0]
-            assert "2000" in cmd
+            mock_ingest.assert_called_once_with(
+                "/path/doc.pdf", title="Doc", authors=None, pub_year=2000, debug=False
+            )
 
     def test_debug_flag(self):
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = ""
-        with patch("batch_ingest.subprocess.run", return_value=mock_result) as mock_run:
+        with patch("batch_ingest.ingest_document", return_value="doc-123") as mock_ingest:
             ingest_single_document("/path/doc.pdf", {"title": "Doc"}, debug=True)
-            cmd = mock_run.call_args[0][0]
-            assert "--debug" in cmd
+            mock_ingest.assert_called_once_with(
+                "/path/doc.pdf", title="Doc", authors=None, pub_year=None, debug=True
+            )
 
 
 # ── process_documents_sequential ──────────────────────────────────────────
@@ -166,10 +152,7 @@ class TestProcessDocumentsSequential:
     def test_processes_all_files(self):
         files = ["/path/a.pdf", "/path/b.pdf"]
         metadata_dict = {}
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = "OK"
-        with patch("batch_ingest.subprocess.run", return_value=mock_result):
+        with patch("batch_ingest.ingest_document", return_value="doc-123"):
             results = process_documents_sequential(files, metadata_dict, debug=False)
             assert len(results) == 2
             assert all(r["status"] == "success" for r in results)
@@ -177,31 +160,26 @@ class TestProcessDocumentsSequential:
     def test_uses_metadata_when_available(self):
         files = ["/path/doc.pdf"]
         metadata_dict = {"doc.pdf": {"title": "Custom Title", "authors": "Author X"}}
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = ""
-        with patch("batch_ingest.subprocess.run", return_value=mock_result) as mock_run:
+        with patch("batch_ingest.ingest_document", return_value="doc-123") as mock_ingest:
             process_documents_sequential(files, metadata_dict, debug=False)
-            cmd = mock_run.call_args[0][0]
-            assert "Custom Title" in cmd
+            mock_ingest.assert_called_once_with(
+                "/path/doc.pdf", title="Custom Title", authors="Author X",
+                pub_year=None, debug=False
+            )
 
     def test_falls_back_to_filename_metadata(self):
         files = ["/path/My Report.pdf"]
         metadata_dict = {}
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = ""
-        with patch("batch_ingest.subprocess.run", return_value=mock_result) as mock_run:
+        with patch("batch_ingest.ingest_document", return_value="doc-123") as mock_ingest:
             process_documents_sequential(files, metadata_dict, debug=False)
-            cmd = mock_run.call_args[0][0]
-            assert "My Report" in cmd
+            mock_ingest.assert_called_once_with(
+                "/path/My Report.pdf", title="My Report", authors=None,
+                pub_year=None, debug=False
+            )
 
     def test_handles_errors(self):
         files = ["/path/a.pdf"]
-        mock_result = MagicMock()
-        mock_result.returncode = 1
-        mock_result.stderr = "failed"
-        with patch("batch_ingest.subprocess.run", return_value=mock_result):
+        with patch("batch_ingest.ingest_document", side_effect=Exception("failed")):
             results = process_documents_sequential(files, {}, debug=False)
             assert results[0]["status"] == "error"
 
@@ -211,16 +189,13 @@ class TestProcessDocumentsSequential:
 class TestProcessDocumentsParallel:
     def test_processes_all_files(self):
         files = ["/path/a.pdf", "/path/b.pdf"]
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = "OK"
-        with patch("batch_ingest.subprocess.run", return_value=mock_result):
+        with patch("batch_ingest.ingest_document", return_value="doc-123"):
             results = process_documents_parallel(files, {}, max_workers=2, debug=False)
             assert len(results) == 2
 
     def test_handles_future_exception(self):
         files = ["/path/a.pdf"]
-        with patch("batch_ingest.subprocess.run", side_effect=Exception("Process crash")):
+        with patch("batch_ingest.ingest_document", side_effect=Exception("Process crash")):
             results = process_documents_parallel(files, {}, max_workers=1, debug=False)
             assert len(results) == 1
             assert results[0]["status"] == "error"
@@ -229,25 +204,24 @@ class TestProcessDocumentsParallel:
 # ── CLI main ──────────────────────────────────────────────────────────────
 
 class TestMainCli:
-    def test_no_files_found(self, tmp_path):
+    def test_no_files_found(self, tmp_path, caplog):
         empty_dir = tmp_path / "empty"
         empty_dir.mkdir()
         runner = CliRunner()
-        result = runner.invoke(main, [str(empty_dir)])
-        assert "No document files found" in result.output
+        with caplog.at_level("WARNING", logger="batch_ingest"):
+            result = runner.invoke(main, [str(empty_dir)])
+        assert "No document files found" in caplog.text
 
-    def test_sequential_processing(self, tmp_path):
+    def test_sequential_processing(self, tmp_path, caplog):
         pdf = tmp_path / "test.pdf"
         pdf.write_text("fake pdf")
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = "OK"
         runner = CliRunner()
-        with patch("batch_ingest.subprocess.run", return_value=mock_result):
-            result = runner.invoke(main, [str(tmp_path)])
-            assert "Successful: 1" in result.output
+        with caplog.at_level("INFO", logger="batch_ingest"):
+            with patch("batch_ingest.ingest_document", return_value="doc-123"):
+                result = runner.invoke(main, [str(tmp_path)])
+        assert "Successful: 1" in caplog.text
 
-    def test_parallel_processing(self, tmp_path):
+    def test_parallel_processing(self, tmp_path, caplog):
         (tmp_path / "a.pdf").write_text("pdf")
         (tmp_path / "b.pdf").write_text("pdf")
         runner = CliRunner()
@@ -255,20 +229,18 @@ class TestMainCli:
             {"file_path": str(tmp_path / "a.pdf"), "status": "success", "output": "OK"},
             {"file_path": str(tmp_path / "b.pdf"), "status": "success", "output": "OK"},
         ]
-        with patch("batch_ingest.process_documents_parallel", return_value=mock_results):
-            result = runner.invoke(main, [str(tmp_path), "--parallel", "2"])
-            assert "Successful: 2" in result.output
+        with caplog.at_level("INFO", logger="batch_ingest"):
+            with patch("batch_ingest.process_documents_parallel", return_value=mock_results):
+                result = runner.invoke(main, [str(tmp_path), "--parallel", "2"])
+        assert "Successful: 2" in caplog.text
 
     def test_with_metadata_file(self, tmp_path):
         pdf = tmp_path / "doc.pdf"
         pdf.write_text("fake pdf")
         meta = tmp_path / "meta.json"
         meta.write_text(json.dumps([{"filename": "doc.pdf", "title": "Custom Doc"}]))
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = "OK"
         runner = CliRunner()
-        with patch("batch_ingest.subprocess.run", return_value=mock_result):
+        with patch("batch_ingest.ingest_document", return_value="doc-123"):
             result = runner.invoke(main, [str(tmp_path), "--metadata", str(meta)])
             assert result.exit_code == 0
 
@@ -276,24 +248,19 @@ class TestMainCli:
         pdf = tmp_path / "test.pdf"
         pdf.write_text("fake pdf")
         output = tmp_path / "results.json"
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = "OK"
         runner = CliRunner()
-        with patch("batch_ingest.subprocess.run", return_value=mock_result):
+        with patch("batch_ingest.ingest_document", return_value="doc-123"):
             result = runner.invoke(main, [str(tmp_path), "--output", str(output)])
             assert output.exists()
             data = json.loads(output.read_text())
             assert len(data) == 1
 
-    def test_failure_exits_1(self, tmp_path):
+    def test_failure_exits_1(self, tmp_path, caplog):
         pdf = tmp_path / "test.pdf"
         pdf.write_text("fake pdf")
-        mock_result = MagicMock()
-        mock_result.returncode = 1
-        mock_result.stderr = "error"
         runner = CliRunner()
-        with patch("batch_ingest.subprocess.run", return_value=mock_result):
-            result = runner.invoke(main, [str(tmp_path)])
-            assert "Failed: 1" in result.output
-            assert result.exit_code == 1
+        with caplog.at_level("INFO", logger="batch_ingest"):
+            with patch("batch_ingest.ingest_document", side_effect=Exception("error")):
+                result = runner.invoke(main, [str(tmp_path)])
+        assert "Failed: 1" in caplog.text
+        assert result.exit_code == 1

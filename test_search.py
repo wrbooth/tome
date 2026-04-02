@@ -29,7 +29,7 @@ def run_search(query: str, k: int = 20) -> Dict:
     """Run a search query and return the results."""
     try:
         result = subprocess.run(
-            ["poetry", "run", "python", "search.py", "--q", query, "--k", str(k)],
+            ["uv", "run", "python", "search.py", "--q", query, "--k", str(k)],
             capture_output=True,
             text=True,
             timeout=120

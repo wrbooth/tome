@@ -5,14 +5,16 @@ Codex Search Script
 Implements hybrid search via Meilisearch with cross-encoder re-ranking.
 """
 
-import os
-import sys
+import logging
 import click
 from psycopg2.extras import RealDictCursor
 import json
+import uuid
 from typing import List, Dict, Any, Tuple, Optional
 
-from config import get_db_connection, get_meili_client, get_openai_client, QUERY_ANALYSIS_MODEL, RERANKER_MODEL
+from config import db_connection, get_db_connection, get_meili_client, get_openai_client, QUERY_ANALYSIS_MODEL, RERANKER_MODEL, configure_logging
+
+logger = logging.getLogger(__name__)
 
 def analyze_query(query: str) -> Dict[str, Any]:
     """
@@ -132,7 +134,7 @@ Given a user query, produce a JSON object with the following fields:
         return result
 
     except Exception as e:
-        print(f"Error in query analysis: {e}, using defaults")
+        logger.error("Error in query analysis: %s, using defaults", e)
         return default_result
 
 def hybrid_search(query: str, k: int = 200, document_id: Optional[str] = None,
@@ -153,6 +155,10 @@ def hybrid_search(query: str, k: int = 200, document_id: Optional[str] = None,
         }
 
         if document_id:
+            try:
+                uuid.UUID(document_id)
+            except (ValueError, AttributeError):
+                raise ValueError(f"Invalid document_id: {document_id}")
             search_params["filter"] = f"document_id = '{document_id}'"
 
         response = index.search(query, search_params)
@@ -163,7 +169,7 @@ def hybrid_search(query: str, k: int = 200, document_id: Optional[str] = None,
         ]
 
     except Exception as e:
-        print(f"Warning: Hybrid search failed: {e}")
+        logger.warning("Hybrid search failed: %s", e)
         return []
 
 def _get_reranker():
@@ -286,19 +292,18 @@ def search_codex(query: str, k: int = 20, document_id: Optional[str] = None) -> 
     if not candidates:
         return {"query_type": query_type, "answer": "No candidates found.", "results": []}
 
-    conn = get_db_connection()
-    reranked = rerank_candidates(candidates, query, conn, k=k)
+    with db_connection() as conn:
+        reranked = rerank_candidates(candidates, query, conn, k=k)
 
-    passage_ids = [pid for pid, _ in reranked]
-    passage_details = get_passage_details(conn, passage_ids)
-    score_map = {pid: score for pid, score in reranked}
+        passage_ids = [pid for pid, _ in reranked]
+        passage_details = get_passage_details(conn, passage_ids)
+        score_map = {pid: score for pid, score in reranked}
 
-    # Attach scores to results
-    for detail in passage_details:
-        detail["score"] = score_map.get(detail["id"], 0.0)
+        # Attach scores to results
+        for detail in passage_details:
+            detail["score"] = score_map.get(detail["id"], 0.0)
 
-    answer = generate_answer(query, passage_details)
-    conn.close()
+        answer = generate_answer(query, passage_details)
 
     return {"query_type": query_type, "answer": answer, "results": passage_details}
 
@@ -308,20 +313,21 @@ def search_codex(query: str, k: int = 20, document_id: Optional[str] = None) -> 
 @click.option('--doc', 'document_id', help='Filter by document ID')
 def main(query: str, k: int, document_id: Optional[str]):
     """Search passages using hybrid search with cross-encoder re-ranking."""
+    configure_logging()
 
-    print(f"Searching for: {query}")
+    logger.info("Searching for: %s", query)
 
     result = search_codex(query, k=k, document_id=document_id)
-    print(f"Query type: {result['query_type']}")
+    logger.info("Query type: %s", result['query_type'])
 
-    print(f"\nAnswer:")
-    print("=" * 80)
-    print(result["answer"])
+    click.echo("\nAnswer:")
+    click.echo("=" * 80)
+    click.echo(result["answer"])
 
-    print(f"\nTop {len(result['results'])} results:")
-    print("=" * 80)
+    click.echo(f"\nTop {len(result['results'])} results:")
+    click.echo("=" * 80)
     scores = {r["id"]: r["score"] for r in result["results"]}
-    print(format_results(result["results"], scores))
+    click.echo(format_results(result["results"], scores))
 
 if __name__ == "__main__":
     main()

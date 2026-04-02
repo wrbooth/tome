@@ -1,7 +1,19 @@
 """Shared fixtures for Codex unit tests."""
 
 import pytest
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
+
+
+def make_mock_db_connection(mock_conn):
+    """Create a context manager that yields the given mock connection.
+
+    Useful for patching ``config.db_connection`` in tests.
+    """
+    @contextmanager
+    def _db_connection():
+        yield mock_conn
+    return _db_connection
 
 
 @pytest.fixture
@@ -58,16 +70,12 @@ def sample_chunks():
             "page": 1,
             "text": "Doc Title | Chapter One | First chunk of text here.",
             "original_text": "First chunk of text here.",
-            "char_start": 0,
-            "char_end": 24,
             "headings_path": ["Chapter One"]
         },
         {
             "page": 2,
             "text": "Doc Title | Chapter Two | Second chunk of text here.",
             "original_text": "Second chunk of text here.",
-            "char_start": 0,
-            "char_end": 25,
             "headings_path": ["Chapter Two"]
         },
     ]

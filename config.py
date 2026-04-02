@@ -3,9 +3,23 @@ Shared configuration and client singletons for Codex.
 """
 
 import os
+import sys
+import logging
+from contextlib import contextmanager
 import psycopg2
+from psycopg2.pool import ThreadedConnectionPool
 from dotenv import load_dotenv
 from meilisearch import Client as MeiliClient
+
+
+def configure_logging(level=logging.INFO):
+    """Configure logging for the Codex application."""
+    logging.basicConfig(
+        level=level,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+        stream=sys.stderr,
+    )
 
 load_dotenv()
 
@@ -17,15 +31,44 @@ RERANKER_MODEL = os.getenv("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-
 
 # Database
 
+_pool = None
+
+def _get_pool():
+    """Get or create the connection pool."""
+    global _pool
+    if _pool is None:
+        _pool = ThreadedConnectionPool(
+            minconn=1,
+            maxconn=10,
+            host=os.getenv("DB_HOST", "localhost"),
+            port=os.getenv("DB_PORT", "5432"),
+            database=os.getenv("DB_NAME", "codex"),
+            user=os.getenv("DB_USER", "codex"),
+            password=os.getenv("DB_PASSWORD", "codex"),
+        )
+    return _pool
+
+@contextmanager
+def db_connection():
+    """Get a pooled database connection as a context manager."""
+    pool = _get_pool()
+    conn = pool.getconn()
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        pool.putconn(conn)
+
 def get_db_connection():
-    """Get a new database connection."""
-    return psycopg2.connect(
-        host=os.getenv("DB_HOST", "localhost"),
-        port=os.getenv("DB_PORT", "5432"),
-        database=os.getenv("DB_NAME", "codex"),
-        user=os.getenv("DB_USER", "codex"),
-        password=os.getenv("DB_PASSWORD", "codex")
-    )
+    """Get a database connection from the pool.
+
+    Kept for backward compatibility. Prefer using ``db_connection()``
+    as a context manager instead.
+    """
+    return _get_pool().getconn()
 
 # Meilisearch
 

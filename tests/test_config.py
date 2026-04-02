@@ -43,20 +43,29 @@ class TestModelConstants:
 
 
 class TestGetDbConnection:
-    def test_calls_psycopg2_connect(self):
-        from config import get_db_connection
-        with patch("config.psycopg2.connect", return_value=MagicMock()) as mock_connect:
-            get_db_connection()
-            mock_connect.assert_called_once()
+    def test_creates_pool_and_returns_connection(self):
+        import config
+        mock_pool = MagicMock()
+        mock_pool.getconn.return_value = MagicMock()
+        # Reset the cached pool so _get_pool() creates a new one
+        config._pool = None
+        with patch("config.ThreadedConnectionPool", return_value=mock_pool):
+            conn = config.get_db_connection()
+            mock_pool.getconn.assert_called_once()
+            assert conn is not None
+        config._pool = None  # clean up
 
     def test_uses_env_vars(self):
-        from config import get_db_connection
+        import config
+        config._pool = None
         with patch.dict("os.environ", {"DB_HOST": "myhost", "DB_PORT": "5433"}), \
-             patch("config.psycopg2.connect", return_value=MagicMock()) as mock_connect:
-            get_db_connection()
-            call_kwargs = mock_connect.call_args[1]
+             patch("config.ThreadedConnectionPool") as mock_pool_cls:
+            mock_pool_cls.return_value = MagicMock()
+            config.get_db_connection()
+            call_kwargs = mock_pool_cls.call_args[1]
             assert call_kwargs["host"] == "myhost"
             assert call_kwargs["port"] == "5433"
+        config._pool = None  # clean up
 
 
 class TestGetMeiliClient:

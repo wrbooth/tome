@@ -3,6 +3,7 @@
 import pytest
 from unittest.mock import MagicMock, patch, call
 from click.testing import CliRunner
+from tests.conftest import make_mock_db_connection
 
 from batch_reingest import (
     clear_database,
@@ -23,23 +24,20 @@ class TestClearDatabase:
         mock_conn = MagicMock()
         cursor = mock_conn.cursor.return_value.__enter__.return_value
         cursor.rowcount = 10
-        with patch("batch_reingest.get_db_connection", return_value=mock_conn):
+        with patch("batch_reingest.db_connection", make_mock_db_connection(mock_conn)):
             clear_database()
             calls = cursor.execute.call_args_list
             # First delete passages, then documents
             assert "DELETE FROM passages" in calls[0][0][0]
             assert "DELETE FROM documents" in calls[1][0][0]
-            mock_conn.commit.assert_called_once()
-            mock_conn.close.assert_called_once()
 
     def test_rollback_on_error(self):
         mock_conn = MagicMock()
         cursor = mock_conn.cursor.return_value.__enter__.return_value
         cursor.execute.side_effect = Exception("DB error")
-        with patch("batch_reingest.get_db_connection", return_value=mock_conn):
-            clear_database()
-            mock_conn.rollback.assert_called_once()
-            mock_conn.close.assert_called_once()
+        with patch("batch_reingest.db_connection", make_mock_db_connection(mock_conn)):
+            with pytest.raises(Exception, match="DB error"):
+                clear_database()
 
 
 # ── clear_documents ───────────────────────────────────────────────────────
@@ -49,27 +47,25 @@ class TestClearDocuments:
         mock_conn = MagicMock()
         cursor = mock_conn.cursor.return_value.__enter__.return_value
         cursor.rowcount = 1
-        with patch("batch_reingest.get_db_connection", return_value=mock_conn):
+        with patch("batch_reingest.db_connection", make_mock_db_connection(mock_conn)):
             clear_documents(["doc-1", "doc-2"])
             # 2 docs x 2 deletes each (passages + document)
             assert cursor.execute.call_count == 4
-            mock_conn.commit.assert_called_once()
 
     def test_rollback_on_error(self):
         mock_conn = MagicMock()
         cursor = mock_conn.cursor.return_value.__enter__.return_value
         cursor.execute.side_effect = Exception("DB error")
-        with patch("batch_reingest.get_db_connection", return_value=mock_conn):
-            clear_documents(["doc-1"])
-            mock_conn.rollback.assert_called_once()
+        with patch("batch_reingest.db_connection", make_mock_db_connection(mock_conn)):
+            with pytest.raises(Exception, match="DB error"):
+                clear_documents(["doc-1"])
 
     def test_empty_list(self):
         mock_conn = MagicMock()
         cursor = mock_conn.cursor.return_value.__enter__.return_value
-        with patch("batch_reingest.get_db_connection", return_value=mock_conn):
+        with patch("batch_reingest.db_connection", make_mock_db_connection(mock_conn)):
             clear_documents([])
             cursor.execute.assert_not_called()
-            mock_conn.commit.assert_called_once()
 
 
 # ── clear_meilisearch ─────────────────────────────────────────────────────
@@ -80,25 +76,25 @@ class TestClearMeilisearch:
             clear_meilisearch()
             mock_meili_client.index("passages").delete.assert_called_once()
 
-    def test_handles_not_found(self, mock_meili_client, capsys):
+    def test_handles_not_found(self, mock_meili_client, caplog):
         mock_meili_client.index("passages").delete.side_effect = Exception("index not found")
         with patch("batch_reingest.get_meili_client", return_value=mock_meili_client):
-            clear_meilisearch()
-            output = capsys.readouterr().out
-            assert "already empty" in output
+            with caplog.at_level("INFO", logger="batch_reingest"):
+                clear_meilisearch()
+            assert "already empty" in caplog.text
 
-    def test_handles_other_delete_error(self, mock_meili_client, capsys):
+    def test_handles_other_delete_error(self, mock_meili_client, caplog):
         mock_meili_client.index("passages").delete.side_effect = Exception("timeout error")
         with patch("batch_reingest.get_meili_client", return_value=mock_meili_client):
-            clear_meilisearch()
-            output = capsys.readouterr().out
-            assert "Error deleting" in output
+            with caplog.at_level("ERROR", logger="batch_reingest"):
+                clear_meilisearch()
+            assert "Error deleting" in caplog.text
 
-    def test_handles_connection_error(self, capsys):
+    def test_handles_connection_error(self, caplog):
         with patch("batch_reingest.get_meili_client", side_effect=Exception("Connection refused")):
-            clear_meilisearch()
-            output = capsys.readouterr().out
-            assert "Error connecting" in output
+            with caplog.at_level("ERROR", logger="batch_reingest"):
+                clear_meilisearch()
+            assert "Error connecting" in caplog.text
 
 
 # ── get_document_info ─────────────────────────────────────────────────────
@@ -130,16 +126,15 @@ class TestListAllDocuments:
             {"id": "d1", "title": "Doc A", "source_path": "/a", "authors": None, "pub_year": 2000},
             {"id": "d2", "title": "Doc B", "source_path": "/b", "authors": ["X"], "pub_year": 2001},
         ]
-        with patch("batch_reingest.get_db_connection", return_value=mock_conn):
+        with patch("batch_reingest.db_connection", make_mock_db_connection(mock_conn)):
             result = list_all_documents()
             assert len(result) == 2
-            mock_conn.close.assert_called_once()
 
     def test_empty_database(self):
         mock_conn = MagicMock()
         cursor = mock_conn.cursor.return_value.__enter__.return_value
         cursor.fetchall.return_value = []
-        with patch("batch_reingest.get_db_connection", return_value=mock_conn):
+        with patch("batch_reingest.db_connection", make_mock_db_connection(mock_conn)):
             result = list_all_documents()
             assert result == []
 
@@ -194,50 +189,55 @@ class TestRunEmbedding:
 # ── CLI main ──────────────────────────────────────────────────────────────
 
 class TestMainCli:
-    def test_all_flag_no_documents(self):
+    def test_all_flag_no_documents(self, caplog):
         runner = CliRunner()
-        with patch("batch_reingest.list_all_documents", return_value=[]):
-            result = runner.invoke(main, ["--all"])
-            assert "No documents found" in result.output
+        with caplog.at_level("INFO", logger="batch_reingest"):
+            with patch("batch_reingest.list_all_documents", return_value=[]):
+                result = runner.invoke(main, ["--all"])
+        assert "No documents found" in caplog.text
 
-    def test_all_flag_with_documents(self):
+    def test_all_flag_with_documents(self, caplog):
         docs = [
             {"id": "d1", "title": "Doc A", "source_path": "/tmp/test.pdf",
              "authors": None, "pub_year": 2000},
         ]
         runner = CliRunner()
-        with patch("batch_reingest.list_all_documents", return_value=docs), \
-             patch("batch_reingest.reingest_document", return_value=True), \
-             patch("batch_reingest.run_embedding", return_value=True), \
-             patch("os.path.exists", return_value=True):
-            result = runner.invoke(main, ["--all"])
-            assert "Successful: 1" in result.output
+        with caplog.at_level("INFO", logger="batch_reingest"):
+            with patch("batch_reingest.list_all_documents", return_value=docs), \
+                 patch("batch_reingest.reingest_document", return_value=True), \
+                 patch("batch_reingest.run_embedding", return_value=True), \
+                 patch("os.path.exists", return_value=True):
+                result = runner.invoke(main, ["--all"])
+        assert "Successful: 1" in caplog.text
 
-    def test_specific_documents(self):
+    def test_specific_documents(self, caplog):
         runner = CliRunner()
         mock_conn = MagicMock()
         doc_info = {"id": "d1", "title": "Doc", "source_path": "/tmp/test.pdf",
                     "authors": ["A"], "pub_year": 2000}
-        with patch("batch_reingest.get_db_connection", return_value=mock_conn), \
-             patch("batch_reingest.get_document_info", return_value=doc_info), \
-             patch("batch_reingest.reingest_document", return_value=True), \
-             patch("batch_reingest.run_embedding", return_value=True), \
-             patch("os.path.exists", return_value=True):
-            result = runner.invoke(main, ["d1"])
-            assert "Successful: 1" in result.output
+        with caplog.at_level("INFO", logger="batch_reingest"):
+            with patch("batch_reingest.db_connection", make_mock_db_connection(mock_conn)), \
+                 patch("batch_reingest.get_document_info", return_value=doc_info), \
+                 patch("batch_reingest.reingest_document", return_value=True), \
+                 patch("batch_reingest.run_embedding", return_value=True), \
+                 patch("os.path.exists", return_value=True):
+                result = runner.invoke(main, ["d1"])
+        assert "Successful: 1" in caplog.text
 
-    def test_specific_document_not_found(self):
+    def test_specific_document_not_found(self, caplog):
         runner = CliRunner()
         mock_conn = MagicMock()
-        with patch("batch_reingest.get_db_connection", return_value=mock_conn), \
-             patch("batch_reingest.get_document_info", return_value=None):
-            result = runner.invoke(main, ["nonexistent"])
-            assert "not found" in result.output
+        with caplog.at_level("WARNING", logger="batch_reingest"):
+            with patch("batch_reingest.db_connection", make_mock_db_connection(mock_conn)), \
+                 patch("batch_reingest.get_document_info", return_value=None):
+                result = runner.invoke(main, ["nonexistent"])
+        assert "not found" in caplog.text
 
-    def test_no_documents_specified(self):
+    def test_no_documents_specified(self, caplog):
         runner = CliRunner()
-        result = runner.invoke(main, [])
-        assert "Must specify" in result.output
+        with caplog.at_level("ERROR", logger="batch_reingest"):
+            result = runner.invoke(main, [])
+        assert "Must specify" in caplog.text
 
     def test_clear_first_flag(self):
         docs = [{"id": "d1", "title": "Doc", "source_path": "/tmp/test.pdf",
@@ -276,33 +276,35 @@ class TestMainCli:
             result = runner.invoke(main, ["--all", "--skip-embedding"])
             mock_embed.assert_not_called()
 
-    def test_source_file_not_found(self):
+    def test_source_file_not_found(self, caplog):
         docs = [{"id": "d1", "title": "Doc", "source_path": "/nonexistent/file.pdf",
                  "authors": None, "pub_year": None}]
         runner = CliRunner()
-        with patch("batch_reingest.list_all_documents", return_value=docs), \
-             patch("os.path.exists", return_value=False):
-            result = runner.invoke(main, ["--all", "--skip-embedding"])
-            assert "Source file not found" in result.output
-            assert "Failed: 1" in result.output
+        with caplog.at_level("INFO", logger="batch_reingest"):
+            with patch("batch_reingest.list_all_documents", return_value=docs), \
+                 patch("os.path.exists", return_value=False):
+                result = runner.invoke(main, ["--all", "--skip-embedding"])
+        assert "Source file not found" in caplog.text
+        assert "Failed: 1" in caplog.text
 
-    def test_reingest_failure_tracked(self):
+    def test_reingest_failure_tracked(self, caplog):
         docs = [{"id": "d1", "title": "Doc", "source_path": "/tmp/test.pdf",
                  "authors": None, "pub_year": None}]
         runner = CliRunner()
-        with patch("batch_reingest.list_all_documents", return_value=docs), \
-             patch("batch_reingest.reingest_document", return_value=False), \
-             patch("os.path.exists", return_value=True):
-            result = runner.invoke(main, ["--all", "--skip-embedding"])
-            assert "Failed: 1" in result.output
-            assert result.exit_code == 1
+        with caplog.at_level("INFO", logger="batch_reingest"):
+            with patch("batch_reingest.list_all_documents", return_value=docs), \
+                 patch("batch_reingest.reingest_document", return_value=False), \
+                 patch("os.path.exists", return_value=True):
+                result = runner.invoke(main, ["--all", "--skip-embedding"])
+        assert "Failed: 1" in caplog.text
+        assert result.exit_code == 1
 
     def test_embedding_for_specific_docs(self):
         runner = CliRunner()
         mock_conn = MagicMock()
         doc_info = {"id": "d1", "title": "Doc", "source_path": "/tmp/test.pdf",
                     "authors": None, "pub_year": None}
-        with patch("batch_reingest.get_db_connection", return_value=mock_conn), \
+        with patch("batch_reingest.db_connection", make_mock_db_connection(mock_conn)), \
              patch("batch_reingest.get_document_info", return_value=doc_info), \
              patch("batch_reingest.reingest_document", return_value=True), \
              patch("batch_reingest.run_embedding", return_value=True) as mock_embed, \

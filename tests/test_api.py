@@ -2,12 +2,13 @@
 
 import pytest
 from unittest.mock import MagicMock, patch
+from tests.conftest import make_mock_db_connection
 
 
 @pytest.fixture
 def client():
     """FastAPI test client with mocked dependencies."""
-    with patch("api.main.get_db_connection") as mock_conn, \
+    with patch("api.main.db_connection") as mock_conn, \
          patch("api.main.search_codex") as mock_search:
         from api.main import app
         from fastapi.testclient import TestClient
@@ -93,7 +94,7 @@ class TestDocumentsEndpoint:
         ]
         mock_conn.cursor.return_value = mock_cursor
 
-        with patch("api.main.get_db_connection", return_value=mock_conn):
+        with patch("api.main.db_connection", make_mock_db_connection(mock_conn)):
             client = TestClient(app)
             response = client.get("/documents")
             assert response.status_code == 200
@@ -102,7 +103,7 @@ class TestDocumentsEndpoint:
     def test_documents_error_returns_500(self):
         from api.main import app
         from fastapi.testclient import TestClient
-        with patch("api.main.get_db_connection", side_effect=Exception("DB down")):
+        with patch("api.main.db_connection", side_effect=Exception("DB down")):
             client = TestClient(app)
             response = client.get("/documents")
             assert response.status_code == 500
@@ -123,10 +124,11 @@ class TestStatsEndpoint:
             (100,),  # passage count
             (80,),   # embedded count
             (500,),  # entity count
+            (50,),   # year count
         ]
         mock_conn.cursor.return_value = mock_cursor
 
-        with patch("api.main.get_db_connection", return_value=mock_conn):
+        with patch("api.main.db_connection", make_mock_db_connection(mock_conn)):
             client = TestClient(app)
             response = client.get("/stats")
             assert response.status_code == 200
@@ -135,6 +137,7 @@ class TestStatsEndpoint:
             assert data["passages"] == 100
             assert data["embedded_passages"] == 80
             assert data["embedding_coverage"] == "80.0%"
+            assert data["years"] == 50
 
     def test_zero_passages_coverage(self):
         from api.main import app
@@ -148,10 +151,11 @@ class TestStatsEndpoint:
             (0,),  # passage count
             (0,),  # embedded count
             (0,),  # entity count
+            (0,),  # year count
         ]
         mock_conn.cursor.return_value = mock_cursor
 
-        with patch("api.main.get_db_connection", return_value=mock_conn):
+        with patch("api.main.db_connection", make_mock_db_connection(mock_conn)):
             client = TestClient(app)
             response = client.get("/stats")
             assert response.status_code == 200

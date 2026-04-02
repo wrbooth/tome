@@ -152,8 +152,8 @@ class TestGenerateAnswerWithLlm:
         mock_response.choices = [MagicMock()]
         mock_response.choices[0].message.content = "The answer is yes. Sources: [Doc, Page 5]"
 
-        with patch("answer_generator.client") as mock_client:
-            mock_client.chat.completions.create.return_value = mock_response
+        with patch("answer_generator._get_client") as mock_get_client:
+            mock_get_client.return_value.chat.completions.create.return_value = mock_response
             chunks = [{"text": "Test text.", "page": 5, "title": "Doc"}]
             result = generate_answer_with_llm("What?", chunks)
             assert result["answer"] == "The answer is yes. Sources: [Doc, Page 5]"
@@ -161,8 +161,8 @@ class TestGenerateAnswerWithLlm:
 
     def test_api_exception_returns_error(self):
         from answer_generator import generate_answer_with_llm
-        with patch("answer_generator.client") as mock_client:
-            mock_client.chat.completions.create.side_effect = Exception("API error")
+        with patch("answer_generator._get_client") as mock_get_client:
+            mock_get_client.return_value.chat.completions.create.side_effect = Exception("API error")
             chunks = [{"text": "Test.", "page": 1, "title": "Doc"}]
             result = generate_answer_with_llm("What?", chunks)
             assert result["confidence"] == "error"
@@ -178,8 +178,8 @@ class TestAnswerQuery:
         mock_response.choices = [MagicMock()]
         mock_response.choices[0].message.content = "Generated answer. Sources: [Doc, Page 1]"
 
-        with patch("answer_generator.client") as mock_client:
-            mock_client.chat.completions.create.return_value = mock_response
+        with patch("answer_generator._get_client") as mock_get_client:
+            mock_get_client.return_value.chat.completions.create.return_value = mock_response
             search_results = [{"text": "Content.", "page": 1, "title": "Doc"}]
             result = answer_query("What?", search_results)
             assert isinstance(result, str)

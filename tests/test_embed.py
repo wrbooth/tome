@@ -2,6 +2,7 @@
 
 import pytest
 from unittest.mock import MagicMock, patch, call
+from tests.conftest import make_mock_db_connection
 
 from embed import validate_embedding_dimension
 
@@ -84,6 +85,8 @@ class TestGetLocalEmbeddings:
             with patch.dict("sys.modules", {"sentence_transformers": mock_st}):
                 result = get_local_embeddings(["test"])
                 assert isinstance(result, list)
+                assert len(result) > 0, "Expected at least one embedding returned"
+                assert isinstance(result[0], list), "Expected each embedding to be a list"
 
 
 # ── get_unembedded_passages ───────────────────────────────────────────────
@@ -131,7 +134,7 @@ class TestRunEmbeddings:
     def test_no_passages_returns_true(self):
         from embed import run_embeddings
         mock_conn = MagicMock()
-        with patch("embed.get_db_connection", return_value=mock_conn), \
+        with patch("embed.db_connection", make_mock_db_connection(mock_conn)), \
              patch("embed.get_unembedded_passages", return_value=[]):
             result = run_embeddings()
             assert result is True
@@ -140,7 +143,7 @@ class TestRunEmbeddings:
         from embed import run_embeddings
         mock_conn = MagicMock()
         passages = [{"id": "p1", "text": "Test text"}]
-        with patch("embed.get_db_connection", return_value=mock_conn), \
+        with patch("embed.db_connection", make_mock_db_connection(mock_conn)), \
              patch("embed.get_unembedded_passages", return_value=passages), \
              patch("embed.get_openai_embeddings", return_value=[]):
             result = run_embeddings(provider="openai")
@@ -151,7 +154,7 @@ class TestRunEmbeddings:
         mock_conn = MagicMock()
         passages = [{"id": "p1", "text": "Test text"}]
         embeddings = [[0.1] * 1536]
-        with patch("embed.get_db_connection", return_value=mock_conn), \
+        with patch("embed.db_connection", make_mock_db_connection(mock_conn)), \
              patch("embed.get_unembedded_passages") as mock_get:
             # First call returns passages, second (remaining check) returns empty
             mock_get.side_effect = [passages, []]

@@ -3,6 +3,7 @@
 import pytest
 import json
 from unittest.mock import MagicMock, patch
+from tests.conftest import make_mock_db_connection
 
 from search import format_results
 
@@ -122,11 +123,13 @@ class TestHybridSearch:
     def test_with_document_id_filter(self, mock_meili_client):
         from search import hybrid_search
         with patch("search.get_meili_client", return_value=mock_meili_client):
-            hybrid_search("test", document_id="doc-123")
+            test_uuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            hybrid_search("test", document_id=test_uuid)
+            mock_meili_client.index("passages").search.assert_called()
             call_args = mock_meili_client.index("passages").search.call_args
             search_params = call_args[0][1] if len(call_args[0]) > 1 else call_args[1].get("opt_params", {})
-            # Verify filter was set somehow
-            mock_meili_client.index("passages").search.assert_called()
+            assert "filter" in search_params, "Expected 'filter' key in search params"
+            assert test_uuid in search_params["filter"], "Expected document_id in filter string"
 
     def test_error_returns_empty_list(self):
         from search import hybrid_search
@@ -196,7 +199,7 @@ class TestSearchCodex:
         from search import search_codex
         with patch("search.analyze_query", return_value={"query_type": "factoid", "expansions": ["q"]}), \
              patch("search.hybrid_search", return_value=[("p1", 0.9)]), \
-             patch("search.get_db_connection", return_value=mock_db_conn), \
+             patch("search.db_connection", make_mock_db_connection(mock_db_conn)), \
              patch("search.rerank_candidates", return_value=[("p1", 0.95)]), \
              patch("search.get_passage_details", return_value=[
                  {"id": "p1", "text": "Answer text.", "page": 1, "title": "Doc", "headings_path": []}

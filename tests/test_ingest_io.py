@@ -3,6 +3,7 @@
 import pytest
 from unittest.mock import MagicMock, patch, mock_open
 import uuid
+from tests.conftest import make_mock_db_connection
 
 from ingest import (
     extract_text_from_txt,
@@ -11,7 +12,6 @@ from ingest import (
     store_passages,
     index_in_meilisearch,
     extract_text_with_font_info,
-    extract_text_from_pdf,
     extract_headings_from_outline,
     extract_headings_from_toc_pages,
     extract_headings_by_typography,
@@ -63,41 +63,41 @@ class TestExtractTextFromTxt:
 # ── debug_headings ────────────────────────────────────────────────────────
 
 class TestDebugHeadings:
-    def test_with_headings(self, capsys):
+    def test_with_headings(self, caplog):
         pages = [{
             "page": 1,
             "headings": [
                 {"text": "Chapter One", "detection_method": "regex", "level": 1}
             ]
         }]
-        debug_headings(pages)
-        output = capsys.readouterr().out
-        assert "HEADING DETECTION DEBUG" in output
-        assert "Chapter One" in output
-        assert "Level 1" in output
+        with caplog.at_level("DEBUG", logger="heading_detection"):
+            debug_headings(pages)
+        assert "HEADING DETECTION DEBUG" in caplog.text
+        assert "Chapter One" in caplog.text
+        assert "Level 1" in caplog.text
 
-    def test_no_headings(self, capsys):
+    def test_no_headings(self, caplog):
         pages = [{"page": 1, "headings": []}]
-        debug_headings(pages)
-        output = capsys.readouterr().out
-        assert "No headings detected" in output
+        with caplog.at_level("DEBUG", logger="heading_detection"):
+            debug_headings(pages)
+        assert "No headings detected" in caplog.text
 
-    def test_respects_max_pages(self, capsys):
+    def test_respects_max_pages(self, caplog):
         pages = [{"page": i, "headings": []} for i in range(10)]
-        debug_headings(pages, max_pages=2)
-        output = capsys.readouterr().out
-        assert "Page 0" in output
-        assert "Page 1" in output
-        assert "Page 2" not in output
+        with caplog.at_level("DEBUG", logger="heading_detection"):
+            debug_headings(pages, max_pages=2)
+        assert "Page 0" in caplog.text
+        assert "Page 1" in caplog.text
+        assert "Page 2" not in caplog.text
 
-    def test_heading_with_title_key(self, capsys):
+    def test_heading_with_title_key(self, caplog):
         pages = [{
             "page": 1,
             "headings": [{"title": "Appendix A", "level": 1}]
         }]
-        debug_headings(pages)
-        output = capsys.readouterr().out
-        assert "Appendix A" in output
+        with caplog.at_level("DEBUG", logger="heading_detection"):
+            debug_headings(pages)
+        assert "Appendix A" in caplog.text
 
 
 # ── store_document ────────────────────────────────────────────────────────
@@ -134,9 +134,9 @@ class TestStorePassages:
     def test_returns_passage_ids(self, mock_db_conn):
         chunks = [
             {"page": 1, "text": "Hello world.", "original_text": "Hello world.",
-             "headings_path": ["Ch1"], "char_start": 0, "char_end": 12},
+             "headings_path": ["Ch1"]},
         ]
-        with patch("ingest.extract_entities_and_years", return_value=([], [])):
+        with patch("storage.extract_entities_and_years", return_value=([], [])):
             ids = store_passages(mock_db_conn, "doc-1", chunks)
             assert len(ids) == 1
             assert len(ids[0]) == 36
@@ -147,9 +147,9 @@ class TestStorePassages:
         years = [1776]
         chunks = [
             {"page": 1, "text": "Text.", "original_text": "Text.",
-             "headings_path": [], "char_start": 0, "char_end": 5},
+             "headings_path": []},
         ]
-        with patch("ingest.extract_entities_and_years", return_value=(entities, years)):
+        with patch("storage.extract_entities_and_years", return_value=(entities, years)):
             store_passages(mock_db_conn, "doc-1", chunks)
             # Should have INSERT for passage + entity + year = 3 execute calls
             assert cursor.execute.call_count == 3
@@ -157,10 +157,10 @@ class TestStorePassages:
     def test_multiple_chunks(self, mock_db_conn):
         chunks = [
             {"page": i, "text": f"Text {i}.", "original_text": f"Text {i}.",
-             "headings_path": [], "char_start": 0, "char_end": 7}
+             "headings_path": []}
             for i in range(3)
         ]
-        with patch("ingest.extract_entities_and_years", return_value=([], [])):
+        with patch("storage.extract_entities_and_years", return_value=([], [])):
             ids = store_passages(mock_db_conn, "doc-1", chunks)
             assert len(ids) == 3
             mock_db_conn.commit.assert_called_once()
@@ -169,9 +169,9 @@ class TestStorePassages:
         chunks = [
             {"page": 1, "text": "Title | Prefixed text.",
              "original_text": "Unprefixed text.",
-             "headings_path": ["Title"], "char_start": 0, "char_end": 16},
+             "headings_path": ["Title"]},
         ]
-        with patch("ingest.extract_entities_and_years", return_value=([], [])) as mock_extract:
+        with patch("storage.extract_entities_and_years", return_value=([], [])) as mock_extract:
             store_passages(mock_db_conn, "doc-1", chunks)
             mock_extract.assert_called_with("Unprefixed text.")
 
@@ -184,8 +184,8 @@ class TestIndexInMeilisearch:
             {"page": 1, "text": "Text.", "original_text": "Text.", "headings_path": []},
         ]
         passage_ids = ["p-1"]
-        with patch("ingest.get_meili_client", return_value=mock_meili_client), \
-             patch("ingest.extract_entities_and_years", return_value=([], [])):
+        with patch("storage.get_meili_client", return_value=mock_meili_client), \
+             patch("storage.extract_entities_and_years", return_value=([], [])):
             index_in_meilisearch(passages, passage_ids, "doc-1")
             mock_meili_client.index("passages").add_documents.assert_called_once()
 
@@ -194,8 +194,8 @@ class TestIndexInMeilisearch:
         passages = [
             {"page": 1, "text": "Text.", "original_text": "Text.", "headings_path": []},
         ]
-        with patch("ingest.get_meili_client", return_value=mock_meili_client), \
-             patch("ingest.extract_entities_and_years", return_value=([], [])), \
+        with patch("storage.get_meili_client", return_value=mock_meili_client), \
+             patch("storage.extract_entities_and_years", return_value=([], [])), \
              patch.dict("os.environ", {"OPENAI_API_KEY": "sk-test"}):
             index_in_meilisearch(passages, ["p-1"], "doc-1")
             mock_meili_client.index("passages").update_embedders.assert_called_once()
@@ -206,22 +206,22 @@ class TestIndexInMeilisearch:
         passages = [
             {"page": 1, "text": "Text.", "original_text": "Text.", "headings_path": []},
         ]
-        with patch("ingest.get_meili_client", return_value=mock_meili_client), \
-             patch("ingest.extract_entities_and_years", return_value=([], [])):
+        with patch("storage.get_meili_client", return_value=mock_meili_client), \
+             patch("storage.extract_entities_and_years", return_value=([], [])):
             index_in_meilisearch(passages, ["p-1"], "doc-1")
             mock_meili_client.index("passages").update_embedders.assert_not_called()
 
-    def test_meilisearch_exception_handled(self, capsys):
-        with patch("ingest.get_meili_client", side_effect=Exception("Connection refused")):
-            index_in_meilisearch([], [], "doc-1")
-            output = capsys.readouterr().out
-            assert "Warning" in output
+    def test_meilisearch_exception_handled(self, caplog):
+        with patch("storage.get_meili_client", side_effect=Exception("Connection refused")):
+            with caplog.at_level("WARNING", logger="storage"):
+                index_in_meilisearch([], [], "doc-1")
+            assert any("Meilisearch" in r.message for r in caplog.records)
 
-    def test_import_error_handled(self, capsys):
-        with patch("ingest.get_meili_client", side_effect=ImportError("no module")):
-            index_in_meilisearch([], [], "doc-1")
-            output = capsys.readouterr().out
-            assert "Warning" in output
+    def test_import_error_handled(self, caplog):
+        with patch("storage.get_meili_client", side_effect=ImportError("no module")):
+            with caplog.at_level("WARNING", logger="storage"):
+                index_in_meilisearch([], [], "doc-1")
+            assert any("Meilisearch" in r.message for r in caplog.records)
 
 
 # ── extract_headings_from_outline ─────────────────────────────────────────
@@ -233,7 +233,7 @@ class TestExtractHeadingsFromOutline:
             [1, "Chapter 1", 5],
             [2, "Section 1.1", 6],
         ]
-        with patch("ingest.fitz.open", return_value=mock_doc):
+        with patch("heading_detection.fitz.open", return_value=mock_doc):
             headings = extract_headings_from_outline("fake.pdf")
             assert len(headings) == 2
             assert headings[0]["title"] == "Chapter 1"
@@ -244,20 +244,20 @@ class TestExtractHeadingsFromOutline:
     def test_skips_empty_titles(self):
         mock_doc = MagicMock()
         mock_doc.get_toc.return_value = [[1, "", 1], [1, "Valid", 2]]
-        with patch("ingest.fitz.open", return_value=mock_doc):
+        with patch("heading_detection.fitz.open", return_value=mock_doc):
             headings = extract_headings_from_outline("fake.pdf")
             assert len(headings) == 1
 
     def test_skips_page_number_headings(self):
         mock_doc = MagicMock()
         mock_doc.get_toc.return_value = [[1, "Page 5", 5], [1, "Real Heading", 6]]
-        with patch("ingest.fitz.open", return_value=mock_doc):
+        with patch("heading_detection.fitz.open", return_value=mock_doc):
             headings = extract_headings_from_outline("fake.pdf")
             assert len(headings) == 1
             assert headings[0]["title"] == "Real Heading"
 
     def test_exception_returns_empty(self):
-        with patch("ingest.fitz.open", side_effect=Exception("File not found")):
+        with patch("heading_detection.fitz.open", side_effect=Exception("File not found")):
             headings = extract_headings_from_outline("missing.pdf")
             assert headings == []
 
@@ -279,13 +279,13 @@ class TestExtractHeadingsFromTocPages:
 
         mock_doc.load_page.side_effect = load_page
 
-        with patch("ingest.fitz.open", return_value=mock_doc):
+        with patch("heading_detection.fitz.open", return_value=mock_doc):
             headings = extract_headings_from_toc_pages("fake.pdf")
             assert len(headings) >= 1
             assert headings[0]["detection_method"] == "toc_parsing"
 
     def test_exception_returns_empty(self):
-        with patch("ingest.fitz.open", side_effect=Exception("Error")):
+        with patch("heading_detection.fitz.open", side_effect=Exception("Error")):
             assert extract_headings_from_toc_pages("missing.pdf") == []
 
 
@@ -322,7 +322,7 @@ class TestExtractHeadingsByTypography:
             ("More body text.", 12.0, 0),
         ]
         mock_doc = self._make_mock_doc(spans)
-        with patch("ingest.fitz.open", return_value=mock_doc):
+        with patch("heading_detection.fitz.open", return_value=mock_doc):
             headings = extract_headings_by_typography("fake.pdf")
             titles = [h["title"] for h in headings]
             assert "INTRODUCTION" in titles
@@ -334,7 +334,7 @@ class TestExtractHeadingsByTypography:
             ("Normal text.", 12.0, 0),
         ]
         mock_doc = self._make_mock_doc(spans)
-        with patch("ingest.fitz.open", return_value=mock_doc):
+        with patch("heading_detection.fitz.open", return_value=mock_doc):
             headings = extract_headings_by_typography("fake.pdf")
             titles = [h["title"] for h in headings]
             assert "Bold Heading" in titles
@@ -345,7 +345,7 @@ class TestExtractHeadingsByTypography:
             ("Body text.", 12.0, 0),
         ]
         mock_doc = self._make_mock_doc(spans)
-        with patch("ingest.fitz.open", return_value=mock_doc):
+        with patch("heading_detection.fitz.open", return_value=mock_doc):
             headings = extract_headings_by_typography("fake.pdf")
             titles = [h["title"] for h in headings]
             assert "Hi" not in titles
@@ -356,13 +356,13 @@ class TestExtractHeadingsByTypography:
             ("SAME HEADING", 16.0, 0),
         ]
         mock_doc = self._make_mock_doc(spans)
-        with patch("ingest.fitz.open", return_value=mock_doc):
+        with patch("heading_detection.fitz.open", return_value=mock_doc):
             headings = extract_headings_by_typography("fake.pdf")
             titles = [h["title"] for h in headings]
             assert titles.count("SAME HEADING") <= 1
 
     def test_exception_returns_empty(self):
-        with patch("ingest.fitz.open", side_effect=Exception("Error")):
+        with patch("heading_detection.fitz.open", side_effect=Exception("Error")):
             assert extract_headings_by_typography("missing.pdf") == []
 
 
@@ -378,14 +378,14 @@ class TestDetectHeadingPatternsFromFile:
         page1.get_text.return_value = "CHAPTER 2: Second Chapter Title\nMore text."
         mock_doc.load_page.side_effect = [page0, page1]
 
-        with patch("ingest.fitz.open", return_value=mock_doc):
+        with patch("heading_detection.fitz.open", return_value=mock_doc):
             headings = detect_heading_patterns_from_file("fake.pdf")
             assert len(headings) >= 2
             assert headings[0]["page"] == 0
             assert headings[0]["detection_method"] == "regex"
 
     def test_exception_returns_empty(self):
-        with patch("ingest.fitz.open", side_effect=Exception("Error")):
+        with patch("heading_detection.fitz.open", side_effect=Exception("Error")):
             assert detect_heading_patterns_from_file("missing.pdf") == []
 
 
@@ -393,27 +393,29 @@ class TestDetectHeadingPatternsFromFile:
 
 class TestMergeHeadingDetectionMethods:
     def test_combines_all_methods(self):
-        with patch("ingest.extract_headings_from_outline", return_value=[
+        with patch("heading_detection.fitz.open", return_value=MagicMock()), \
+             patch("heading_detection.extract_headings_from_outline", return_value=[
                  {"level": 1, "title": "Outline Heading", "page": 0, "detection_method": "outline"}
              ]), \
-             patch("ingest.extract_headings_from_toc_pages", return_value=[]), \
-             patch("ingest.extract_headings_by_typography", return_value=[]), \
-             patch("ingest.detect_heading_patterns_from_file", return_value=[]):
+             patch("heading_detection.extract_headings_from_toc_pages", return_value=[]), \
+             patch("heading_detection.extract_headings_by_typography", return_value=[]), \
+             patch("heading_detection.detect_heading_patterns_from_file", return_value=[]):
             headings = merge_heading_detection_methods("fake.pdf")
             assert len(headings) >= 1
             assert headings[0]["confidence"] == 0.9
 
     def test_assigns_correct_confidence_scores(self):
-        with patch("ingest.extract_headings_from_outline", return_value=[
+        with patch("heading_detection.fitz.open", return_value=MagicMock()), \
+             patch("heading_detection.extract_headings_from_outline", return_value=[
                  {"level": 1, "title": "A", "page": 0, "detection_method": "outline"}
              ]), \
-             patch("ingest.extract_headings_from_toc_pages", return_value=[
+             patch("heading_detection.extract_headings_from_toc_pages", return_value=[
                  {"level": 1, "title": "B", "page": 1, "detection_method": "toc_parsing"}
              ]), \
-             patch("ingest.extract_headings_by_typography", return_value=[
+             patch("heading_detection.extract_headings_by_typography", return_value=[
                  {"level": 1, "title": "C", "page": 2, "detection_method": "typography"}
              ]), \
-             patch("ingest.detect_heading_patterns_from_file", return_value=[
+             patch("heading_detection.detect_heading_patterns_from_file", return_value=[
                  {"level": 1, "title": "D", "page": 3, "detection_method": "regex", "line_number": 0}
              ]):
             headings = merge_heading_detection_methods("fake.pdf")
@@ -424,24 +426,26 @@ class TestMergeHeadingDetectionMethods:
             assert confidence_by_title.get("D") == 0.5
 
     def test_filters_to_level_1(self):
-        with patch("ingest.extract_headings_from_outline", return_value=[
+        with patch("heading_detection.fitz.open", return_value=MagicMock()), \
+             patch("heading_detection.extract_headings_from_outline", return_value=[
                  {"level": 1, "title": "Level 1", "page": 0, "detection_method": "outline"},
                  {"level": 2, "title": "Level 2", "page": 0, "detection_method": "outline"},
              ]), \
-             patch("ingest.extract_headings_from_toc_pages", return_value=[]), \
-             patch("ingest.extract_headings_by_typography", return_value=[]), \
-             patch("ingest.detect_heading_patterns_from_file", return_value=[]):
+             patch("heading_detection.extract_headings_from_toc_pages", return_value=[]), \
+             patch("heading_detection.extract_headings_by_typography", return_value=[]), \
+             patch("heading_detection.detect_heading_patterns_from_file", return_value=[]):
             headings = merge_heading_detection_methods("fake.pdf")
             levels = [h["level"] for h in headings]
             assert all(l == 1 for l in levels)
 
     def test_preserves_appendix_headings(self):
-        with patch("ingest.extract_headings_from_outline", return_value=[]), \
-             patch("ingest.extract_headings_from_toc_pages", return_value=[]), \
-             patch("ingest.extract_headings_by_typography", return_value=[
+        with patch("heading_detection.fitz.open", return_value=MagicMock()), \
+             patch("heading_detection.extract_headings_from_outline", return_value=[]), \
+             patch("heading_detection.extract_headings_from_toc_pages", return_value=[]), \
+             patch("heading_detection.extract_headings_by_typography", return_value=[
                  {"level": 1, "title": "APPENDIX A: Data", "page": 10, "detection_method": "typography"}
              ]), \
-             patch("ingest.detect_heading_patterns_from_file", return_value=[]):
+             patch("heading_detection.detect_heading_patterns_from_file", return_value=[]):
             headings = merge_heading_detection_methods("fake.pdf")
             titles = [h.get("title", h.get("text", "")) for h in headings]
             assert any("APPENDIX" in t for t in titles)
@@ -467,8 +471,8 @@ class TestExtractTextWithFontInfo:
         }
         mock_doc.load_page.return_value = page
 
-        with patch("ingest.fitz.open", return_value=mock_doc), \
-             patch("ingest.merge_heading_detection_methods", return_value=[]):
+        with patch("pdf_extraction.fitz.open", return_value=mock_doc), \
+             patch("pdf_extraction.merge_heading_detection_methods", return_value=[]):
             pages = extract_text_with_font_info("fake.pdf")
             assert len(pages) == 1
             assert pages[0]["page"] == 1
@@ -492,8 +496,8 @@ class TestExtractTextWithFontInfo:
             {"level": 1, "title": "Chapter One", "page": 0, "detection_method": "outline", "confidence": 0.9}
         ]
 
-        with patch("ingest.fitz.open", return_value=mock_doc), \
-             patch("ingest.merge_heading_detection_methods", return_value=detected_headings):
+        with patch("pdf_extraction.fitz.open", return_value=mock_doc), \
+             patch("pdf_extraction.merge_heading_detection_methods", return_value=detected_headings):
             pages = extract_text_with_font_info("fake.pdf")
             assert len(pages[0]["headings"]) >= 1
             assert pages[0]["headings"][0]["text"] == "Chapter One"
@@ -505,13 +509,13 @@ class TestIngestDocument:
     def test_pdf_pipeline(self):
         mock_pages = [{"page": 1, "text": "Content.", "headings": []}]
         mock_chunks = [{"page": 1, "text": "Content.", "original_text": "Content.",
-                        "headings_path": [], "char_start": 0, "char_end": 8}]
+                        "headings_path": []}]
         mock_conn = MagicMock()
 
-        with patch("ingest.extract_text_from_pdf", return_value=mock_pages), \
+        with patch("ingest.extract_text_with_font_info", return_value=mock_pages), \
              patch("ingest.merge_heading_detection", return_value=mock_pages), \
              patch("ingest.chunk_text_with_headings", return_value=mock_chunks), \
-             patch("ingest.get_db_connection", return_value=mock_conn), \
+             patch("ingest.db_connection", make_mock_db_connection(mock_conn)), \
              patch("ingest.store_document", return_value="doc-123"), \
              patch("ingest.store_passages", return_value=["p-1"]), \
              patch("ingest.index_in_meilisearch"):
@@ -521,13 +525,13 @@ class TestIngestDocument:
     def test_txt_pipeline(self):
         mock_pages = [{"page": 1, "text": "Content.", "headings": []}]
         mock_chunks = [{"page": 1, "text": "Content.", "original_text": "Content.",
-                        "headings_path": [], "char_start": 0, "char_end": 8}]
+                        "headings_path": []}]
         mock_conn = MagicMock()
 
         with patch("ingest.extract_text_from_txt", return_value=mock_pages), \
              patch("ingest.merge_heading_detection", return_value=mock_pages), \
              patch("ingest.chunk_text_with_headings", return_value=mock_chunks), \
-             patch("ingest.get_db_connection", return_value=mock_conn), \
+             patch("ingest.db_connection", make_mock_db_connection(mock_conn)), \
              patch("ingest.store_document", return_value="doc-456"), \
              patch("ingest.store_passages", return_value=["p-1"]), \
              patch("ingest.index_in_meilisearch"):
@@ -541,13 +545,13 @@ class TestIngestDocument:
     def test_title_defaults_to_filename(self):
         mock_pages = [{"page": 1, "text": "Content.", "headings": []}]
         mock_chunks = [{"page": 1, "text": "Content.", "original_text": "Content.",
-                        "headings_path": [], "char_start": 0, "char_end": 8}]
+                        "headings_path": []}]
         mock_conn = MagicMock()
 
         with patch("ingest.extract_text_from_txt", return_value=mock_pages), \
              patch("ingest.merge_heading_detection", return_value=mock_pages), \
              patch("ingest.chunk_text_with_headings", return_value=mock_chunks), \
-             patch("ingest.get_db_connection", return_value=mock_conn), \
+             patch("ingest.db_connection", make_mock_db_connection(mock_conn)), \
              patch("ingest.store_document", return_value="doc-1") as mock_store, \
              patch("ingest.store_passages", return_value=["p-1"]), \
              patch("ingest.index_in_meilisearch"):
@@ -558,13 +562,13 @@ class TestIngestDocument:
     def test_authors_parsed_from_comma_string(self):
         mock_pages = [{"page": 1, "text": "Content.", "headings": []}]
         mock_chunks = [{"page": 1, "text": "Content.", "original_text": "Content.",
-                        "headings_path": [], "char_start": 0, "char_end": 8}]
+                        "headings_path": []}]
         mock_conn = MagicMock()
 
         with patch("ingest.extract_text_from_txt", return_value=mock_pages), \
              patch("ingest.merge_heading_detection", return_value=mock_pages), \
              patch("ingest.chunk_text_with_headings", return_value=mock_chunks), \
-             patch("ingest.get_db_connection", return_value=mock_conn), \
+             patch("ingest.db_connection", make_mock_db_connection(mock_conn)), \
              patch("ingest.store_document", return_value="doc-1") as mock_store, \
              patch("ingest.store_passages", return_value=["p-1"]), \
              patch("ingest.index_in_meilisearch"):
@@ -575,13 +579,13 @@ class TestIngestDocument:
     def test_debug_calls_debug_headings(self):
         mock_pages = [{"page": 1, "text": "Content.", "headings": []}]
         mock_chunks = [{"page": 1, "text": "Content.", "original_text": "Content.",
-                        "headings_path": [], "char_start": 0, "char_end": 8}]
+                        "headings_path": []}]
         mock_conn = MagicMock()
 
         with patch("ingest.extract_text_from_txt", return_value=mock_pages), \
              patch("ingest.merge_heading_detection", return_value=mock_pages), \
              patch("ingest.chunk_text_with_headings", return_value=mock_chunks), \
-             patch("ingest.get_db_connection", return_value=mock_conn), \
+             patch("ingest.db_connection", make_mock_db_connection(mock_conn)), \
              patch("ingest.store_document", return_value="doc-1"), \
              patch("ingest.store_passages", return_value=["p-1"]), \
              patch("ingest.index_in_meilisearch"), \

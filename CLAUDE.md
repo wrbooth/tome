@@ -34,8 +34,8 @@ data/             # Source documents for ingestion
 
 - **Package management**: use `uv`, not pip or poetry
 - **Testing**: pytest with `unittest.mock` for external services. Tests must run without Postgres/Meilisearch/OpenAI
-- `answer_generator.py` calls `get_openai_client()` at import time (line 11) -- tests must patch `answer_generator.client` directly
-- `ingest.py` loads spaCy at import time (line 31-35) -- patch `ingest.nlp` if needed
+- `answer_generator.py` uses lazy loading via `_get_client()` -- tests patch `answer_generator._get_client` to return a mock
+- `entities.py` uses lazy loading via `_get_nlp()` for spaCy -- tests patch `entities._get_nlp` to return a mock or None
 
 ## External Services
 

@@ -11,15 +11,18 @@ Handles ingestion of multiple documents with support for:
 
 import os
 import sys
+import logging
 import click
 import json
 import csv
-import glob
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from concurrent.futures import ProcessPoolExecutor, as_completed
-import subprocess
 from dotenv import load_dotenv
+from ingest import ingest_document
+from config import configure_logging
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -77,49 +80,32 @@ def extract_metadata_from_filename(file_path: str) -> Dict[str, Any]:
     }
 
 def ingest_single_document(file_path: str, metadata: Dict[str, Any], debug: bool = False) -> Dict[str, Any]:
-    """Ingest a single document using the existing ingest.py script."""
+    """Ingest a single document using direct import of ingest_document."""
     try:
-        # Build command
-        cmd = [
-            sys.executable, "ingest.py",
+        title = metadata.get('title', Path(file_path).stem)
+
+        authors = metadata.get('authors')
+        if isinstance(authors, list):
+            authors = ','.join(authors)
+
+        pub_year = metadata.get('pub_year')
+        if pub_year is not None:
+            pub_year = int(pub_year)
+
+        doc_id = ingest_document(
             file_path,
-            "--title", metadata.get('title', Path(file_path).stem),
-        ]
-        
-        if metadata.get('authors'):
-            # Convert list to comma-separated string if needed
-            authors = metadata['authors']
-            if isinstance(authors, list):
-                authors = ','.join(authors)
-            cmd.extend(["--authors", authors])
-        
-        if metadata.get('pub_year'):
-            cmd.extend(["--pub-year", str(metadata['pub_year'])])
-        
-        if debug:
-            cmd.append("--debug")
-        
-        # Run ingestion
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            cwd=os.getcwd()
+            title=title,
+            authors=authors,
+            pub_year=pub_year,
+            debug=debug,
         )
-        
-        if result.returncode == 0:
-            return {
-                'file_path': file_path,
-                'status': 'success',
-                'output': result.stdout
-            }
-        else:
-            return {
-                'file_path': file_path,
-                'status': 'error',
-                'error': result.stderr
-            }
-            
+
+        return {
+            'file_path': file_path,
+            'status': 'success',
+            'output': f'Ingested document {doc_id}'
+        }
+
     except Exception as e:
         return {
             'file_path': file_path,
@@ -150,17 +136,17 @@ def process_documents_parallel(files: List[str], metadata_dict: Dict[str, Dict[s
                 results.append(result)
                 
                 if result['status'] == 'success':
-                    print(f"✅ Success: {Path(file_path).name}")
+                    logger.info("Success: %s", Path(file_path).name)
                 else:
-                    print(f"❌ Error: {Path(file_path).name} - {result.get('error', 'Unknown error')}")
-                    
+                    logger.error("Error: %s - %s", Path(file_path).name, result.get('error', 'Unknown error'))
+
             except Exception as e:
                 results.append({
                     'file_path': file_path,
                     'status': 'error',
                     'error': str(e)
                 })
-                print(f"❌ Exception: {Path(file_path).name} - {str(e)}")
+                logger.error("Exception: %s - %s", Path(file_path).name, str(e))
     
     return results
 
@@ -173,15 +159,15 @@ def process_documents_sequential(files: List[str], metadata_dict: Dict[str, Dict
         filename = Path(file_path).name
         metadata = metadata_dict.get(filename, extract_metadata_from_filename(file_path))
         
-        print(f"Processing {i}/{len(files)}: {filename}")
-        
+        logger.info("Processing %d/%d: %s", i, len(files), filename)
+
         result = ingest_single_document(file_path, metadata, debug)
         results.append(result)
-        
+
         if result['status'] == 'success':
-            print(f"✅ Success: {filename}")
+            logger.info("Success: %s", filename)
         else:
-            print(f"❌ Error: {filename} - {result.get('error', 'Unknown error')}")
+            logger.error("Error: %s - %s", filename, result.get('error', 'Unknown error'))
     
     return results
 
@@ -195,57 +181,58 @@ def process_documents_sequential(files: List[str], metadata_dict: Dict[str, Dict
 def main(input_path: str, recursive: bool, metadata: Optional[str], 
          parallel: int, debug: bool, output: Optional[str]):
     """Batch ingest multiple documents."""
-    
-    print(f"=== Codex Batch Ingestion ===")
-    print(f"Input: {input_path}")
-    print(f"Recursive: {recursive}")
-    print(f"Parallel: {parallel}")
-    print(f"Debug: {debug}")
-    
+    configure_logging(logging.DEBUG if debug else logging.INFO)
+
+    logger.info("=== Codex Batch Ingestion ===")
+    logger.info("Input: %s", input_path)
+    logger.info("Recursive: %s", recursive)
+    logger.info("Parallel: %d", parallel)
+    logger.info("Debug: %s", debug)
+
     # Load metadata if provided
     metadata_dict = {}
     if metadata:
-        print(f"Loading metadata from: {metadata}")
+        logger.info("Loading metadata from: %s", metadata)
         metadata_dict = load_metadata_file(metadata)
-        print(f"Loaded metadata for {len(metadata_dict)} documents")
-    
+        logger.info("Loaded metadata for %d documents", len(metadata_dict))
+
     # Get document files
     files = get_document_files(input_path, recursive)
     if not files:
-        print("No document files found!")
+        logger.warning("No document files found!")
         return
-    
-    print(f"Found {len(files)} documents to process:")
+
+    logger.info("Found %d documents to process:", len(files))
     for file_path in files:
-        print(f"  - {Path(file_path).name}")
-    
+        logger.info("  - %s", Path(file_path).name)
+
     # Process documents
-    print(f"\nStarting ingestion...")
+    logger.info("Starting ingestion...")
     if parallel > 1:
         results = process_documents_parallel(files, metadata_dict, parallel, debug)
     else:
         results = process_documents_sequential(files, metadata_dict, debug)
     
     # Summary
-    print(f"\n=== Ingestion Summary ===")
+    logger.info("=== Ingestion Summary ===")
     successful = sum(1 for r in results if r['status'] == 'success')
     failed = len(results) - successful
-    
-    print(f"Total: {len(results)}")
-    print(f"Successful: {successful}")
-    print(f"Failed: {failed}")
-    
+
+    logger.info("Total: %d", len(results))
+    logger.info("Successful: %d", successful)
+    logger.info("Failed: %d", failed)
+
     if failed > 0:
-        print(f"\nFailed documents:")
+        logger.info("Failed documents:")
         for result in results:
             if result['status'] == 'error':
-                print(f"  - {Path(result['file_path']).name}: {result.get('error', 'Unknown error')}")
-    
+                logger.info("  - %s: %s", Path(result['file_path']).name, result.get('error', 'Unknown error'))
+
     # Save results if requested
     if output:
         with open(output, 'w') as f:
             json.dump(results, f, indent=2)
-        print(f"\nResults saved to: {output}")
+        logger.info("Results saved to: %s", output)
     
     if failed > 0:
         sys.exit(1)

@@ -5,17 +5,26 @@ FastAPI wrapper for the search functionality.
 """
 
 import sys
-sys.path.append('..')
+import logging
+from pathlib import Path
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
+logger = logging.getLogger(__name__)
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 from psycopg2.extras import RealDictCursor
 
-from config import get_db_connection
+from config import db_connection
+from documents import get_system_stats
 from search import search_codex
+from models import PassageDetail, DocumentInfo
 
 app = FastAPI(title="Codex Search API", version="1.0.0")
+
+
+# API-specific request/response models that reference shared models.
 
 class SearchRequest(BaseModel):
     query: str
@@ -23,6 +32,7 @@ class SearchRequest(BaseModel):
     document_id: Optional[str] = None
 
 class SearchResult(BaseModel):
+    """API representation of a search result (includes snippet instead of full text)."""
     passage_id: str
     title: str
     page: int
@@ -66,19 +76,18 @@ async def search(request: SearchRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/documents")
+@app.get("/documents", response_model=List[DocumentInfo])
 async def list_documents():
     """List all documents in the system."""
     try:
-        conn = get_db_connection()
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("""
-                SELECT id, title, authors, pub_year, source_path
-                FROM documents ORDER BY title
-            """)
-            documents = cur.fetchall()
-        conn.close()
-        return [dict(doc) for doc in documents]
+        with db_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT id, title, authors, pub_year, source_path
+                    FROM documents ORDER BY title
+                """)
+                documents = cur.fetchall()
+            return [DocumentInfo(**dict(doc)) for doc in documents]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -86,25 +95,8 @@ async def list_documents():
 async def get_stats():
     """Get system statistics."""
     try:
-        conn = get_db_connection()
-        with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM documents")
-            doc_count = cur.fetchone()[0]
-            cur.execute("SELECT COUNT(*) FROM passages")
-            passage_count = cur.fetchone()[0]
-            cur.execute("SELECT COUNT(*) FROM passages WHERE embedding IS NOT NULL")
-            embedded_count = cur.fetchone()[0]
-            cur.execute("SELECT COUNT(*) FROM passage_entities")
-            entity_count = cur.fetchone()[0]
-        conn.close()
-
-        return {
-            "documents": doc_count,
-            "passages": passage_count,
-            "embedded_passages": embedded_count,
-            "embedding_coverage": f"{(embedded_count/passage_count*100):.1f}%" if passage_count > 0 else "0%",
-            "entities": entity_count
-        }
+        with db_connection() as conn:
+            return get_system_stats(conn)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

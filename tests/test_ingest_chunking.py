@@ -115,8 +115,8 @@ class TestChunkTextWithHeadings:
         chunks = chunk_text_with_headings(pages, max_tokens=500)
         # Page 2 chunk should still have "Chapter One" in heading path
         page2_chunks = [c for c in chunks if c["page"] == 2]
-        if page2_chunks:
-            assert "Chapter One" in page2_chunks[0]["headings_path"]
+        assert len(page2_chunks) >= 1, "Expected at least one chunk from page 2"
+        assert "Chapter One" in page2_chunks[0]["headings_path"]
 
     def test_empty_paragraphs_skipped(self):
         """Empty lines don't create empty chunks."""
@@ -132,20 +132,22 @@ class TestChunkTextWithHeadings:
         text = "\n".join(paras)
         pages = [{"page": 1, "text": text, "headings": []}]
         chunks = chunk_text_with_headings(pages, max_tokens=30)
-        if len(chunks) >= 2:
-            # The last paragraph of chunk 0 should appear in chunk 1
-            chunk0_words = chunks[0]["original_text"].split()
-            chunk1_words = chunks[1]["original_text"].split()
-            # Last few words of chunk 0 should be in chunk 1
-            last_para_of_0 = chunks[0]["original_text"].rsplit(".", 2)
-            # Just verify overlap exists - some content from end of chunk 0 is in chunk 1
-            assert len(chunks) >= 2
+        assert len(chunks) >= 2, "Expected at least 2 chunks for overlap test"
+        # The last sentence/paragraph of chunk 0 should appear in chunk 1 (overlap)
+        # Paragraphs are joined with spaces in output, so split on ". " to find last paragraph
+        chunk0_text = chunks[0]["original_text"].strip()
+        # Find the last complete sentence (paragraph) in chunk 0
+        sentences = [s.strip() for s in chunk0_text.split(". ") if s.strip()]
+        last_sentence = sentences[-1].rstrip(".")
+        assert last_sentence in chunks[1]["original_text"], (
+            f"Expected last paragraph of chunk 0 ({last_sentence!r}) to appear in chunk 1"
+        )
 
     def test_chunk_has_required_keys(self):
-        """Each chunk has page, text, original_text, char_start, char_end, headings_path."""
+        """Each chunk has page, text, original_text, headings_path."""
         pages = [{"page": 1, "text": "Some content here.", "headings": []}]
         chunks = chunk_text_with_headings(pages, max_tokens=500)
-        required = {"page", "text", "original_text", "char_start", "char_end", "headings_path"}
+        required = {"page", "text", "original_text", "headings_path"}
         for chunk in chunks:
             assert required.issubset(chunk.keys())
 
@@ -181,16 +183,3 @@ class TestChunkTextWithHeadings:
         assert any(c["page"] == 5 for c in chunks)
         assert any(c["page"] == 6 for c in chunks)
 
-    def test_char_end_matches_original_text_length(self):
-        """char_end equals len(original_text)."""
-        pages = [{"page": 1, "text": "Hello world content.", "headings": []}]
-        chunks = chunk_text_with_headings(pages, max_tokens=500)
-        for chunk in chunks:
-            assert chunk["char_end"] == len(chunk["original_text"])
-
-    def test_char_start_is_zero(self):
-        """char_start is always 0."""
-        pages = [{"page": 1, "text": "Content paragraph here.", "headings": []}]
-        chunks = chunk_text_with_headings(pages, max_tokens=500)
-        for chunk in chunks:
-            assert chunk["char_start"] == 0

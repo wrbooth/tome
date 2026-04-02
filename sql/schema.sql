@@ -5,7 +5,6 @@ create table if not exists documents (
   title text not null,
   authors text[],
   pub_year int,
-  language text,
   source_path text not null
 );
 
@@ -13,9 +12,6 @@ create table if not exists passages (
   id uuid primary key,
   document_id uuid references documents(id) on delete cascade,
   page int not null,
-  block_id text,
-  char_start int,
-  char_end int,
   headings_path text[],
   text text not null,
   embedding vector(1536)
@@ -33,14 +29,6 @@ create table if not exists passage_years (
   passage_id uuid references passages(id) on delete cascade,
   year int,
   primary key (passage_id, year)
-);
-
-create table if not exists places (
-  place_key text primary key,
-  display_name text,
-  country text,
-  region text,
-  founding_year int
 );
 
 create index if not exists idx_passages_tsv on passages using gin (to_tsvector('simple', text));
