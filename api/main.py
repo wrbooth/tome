@@ -4,27 +4,17 @@ Codex API Service
 Simple FastAPI wrapper for the search functionality.
 """
 
-import os
+import sys
+sys.path.append('..')
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
-import psycopg2
 from psycopg2.extras import RealDictCursor
-from dotenv import load_dotenv
 
-load_dotenv()
+from config import get_db_connection
 
 app = FastAPI(title="Codex Search API", version="1.0.0")
-
-def get_db_connection():
-    """Get database connection."""
-    return psycopg2.connect(
-        host=os.getenv("DB_HOST", "localhost"),
-        port=os.getenv("DB_PORT", "5432"),
-        database=os.getenv("DB_NAME", "codex"),
-        user=os.getenv("DB_USER", "codex"),
-        password=os.getenv("DB_PASSWORD", "codex")
-    )
 
 class SearchRequest(BaseModel):
     query: str
@@ -47,10 +37,6 @@ async def health_check():
 async def search(request: SearchRequest):
     """Search passages using the same logic as search.py."""
     try:
-        # Import search functions from the main search module
-        import sys
-        sys.path.append('..')
-        
         from search import (
             hybrid_search,
             rerank_candidates,

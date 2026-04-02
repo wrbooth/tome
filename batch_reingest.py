@@ -12,25 +12,12 @@ Handles re-ingestion of multiple documents with options to:
 import os
 import sys
 import click
-import psycopg2
 from psycopg2.extras import RealDictCursor
-from dotenv import load_dotenv
 from typing import List, Dict, Any, Optional
 import subprocess
-import meilisearch
 from pathlib import Path
 
-load_dotenv()
-
-def get_db_connection():
-    """Get database connection."""
-    return psycopg2.connect(
-        host=os.getenv("DB_HOST", "localhost"),
-        port=os.getenv("DB_PORT", "5432"),
-        database=os.getenv("DB_NAME", "codex"),
-        user=os.getenv("DB_USER", "codex"),
-        password=os.getenv("DB_PASSWORD", "codex")
-    )
+from config import get_db_connection, get_meili_client
 
 def clear_database():
     """Clear all data from the database."""
@@ -86,11 +73,8 @@ def clear_meilisearch():
     print("Clearing Meilisearch...")
     
     try:
-        client = meilisearch.Client(
-            os.getenv("MEILISEARCH_URL", "http://localhost:7700"),
-            os.getenv("MEILISEARCH_MASTER_KEY", "masterKey")
-        )
-        
+        client = get_meili_client()
+
         # Delete the index if it exists
         try:
             client.index("passages").delete()

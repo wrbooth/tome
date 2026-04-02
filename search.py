@@ -8,25 +8,11 @@ Implements hybrid search via Meilisearch with cross-encoder re-ranking.
 import os
 import sys
 import click
-import psycopg2
 from psycopg2.extras import RealDictCursor
-from dotenv import load_dotenv
 import json
 from typing import List, Dict, Any, Tuple, Optional
-from meilisearch import Client as MeiliClient
-import openai
 
-load_dotenv()
-
-def get_db_connection():
-    """Get database connection."""
-    return psycopg2.connect(
-        host=os.getenv("DB_HOST", "localhost"),
-        port=os.getenv("DB_PORT", "5432"),
-        database=os.getenv("DB_NAME", "codex"),
-        user=os.getenv("DB_USER", "codex"),
-        password=os.getenv("DB_PASSWORD", "codex")
-    )
+from config import get_db_connection, get_meili_client, get_openai_client
 
 def analyze_query(query: str) -> Dict[str, Any]:
     """
@@ -44,11 +30,6 @@ def analyze_query(query: str) -> Dict[str, Any]:
     }
 
     try:
-        load_dotenv()
-        if not os.getenv('OPENAI_API_KEY'):
-            print("Error: OPENAI_API_KEY not found in environment")
-            return default_result
-
         system_prompt = """You are a query analysis engine for a historical document search system.
 Given a user query, produce a JSON object with the following fields:
 
@@ -84,7 +65,7 @@ Given a user query, produce a JSON object with the following fields:
    - Key entity combinations (e.g., "[location] settlers")
    For "who" questions about roles, focus on role/position terms. Be specific to context."""
 
-        client = openai.OpenAI()
+        client = get_openai_client()
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -158,7 +139,7 @@ def hybrid_search(query: str, k: int = 200, document_id: Optional[str] = None,
                   semantic_ratio: float = 0.75) -> List[Tuple[str, float]]:
     """Run hybrid (keyword + semantic) search via Meilisearch."""
     try:
-        client = MeiliClient(os.getenv("MEILI_URL", "http://localhost:7700"))
+        client = get_meili_client()
         index = client.index("passages")
 
         search_params = {

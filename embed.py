@@ -8,34 +8,17 @@ Generates embeddings for passages using OpenAI or local models.
 import os
 import sys
 import click
-import psycopg2
 from psycopg2.extras import RealDictCursor
-from dotenv import load_dotenv
 import numpy as np
 from typing import List, Dict, Any, Optional
 import tiktoken
 
-load_dotenv()
-
-def get_db_connection():
-    """Get database connection."""
-    return psycopg2.connect(
-        host=os.getenv("DB_HOST", "localhost"),
-        port=os.getenv("DB_PORT", "5432"),
-        database=os.getenv("DB_NAME", "codex"),
-        user=os.getenv("DB_USER", "codex"),
-        password=os.getenv("DB_PASSWORD", "codex")
-    )
+from config import get_db_connection, get_openai_client
 
 def get_openai_embeddings(texts: List[str], model: str = "text-embedding-3-small") -> List[List[float]]:
     """Get embeddings from OpenAI API."""
     try:
-        from openai import OpenAI
-        
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        
-        if not os.getenv("OPENAI_API_KEY"):
-            raise ValueError("OPENAI_API_KEY environment variable not set")
+        client = get_openai_client()
         
         # OpenAI API has a limit of 8192 tokens per request
         # We'll batch requests if needed

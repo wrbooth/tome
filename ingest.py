@@ -10,16 +10,14 @@ import sys
 import uuid
 import click
 import fitz  # PyMuPDF
-import psycopg2
 from psycopg2.extras import RealDictCursor
-from dotenv import load_dotenv
 import spacy
 import re
 from typing import List, Dict, Any, Tuple, Optional
 import json
 from collections import Counter
 
-load_dotenv()
+from config import get_db_connection, get_meili_client
 
 # Load spaCy model for NER
 try:
@@ -27,16 +25,6 @@ try:
 except OSError:
     print("Warning: spaCy model not found. Run: python -m spacy download en_core_web_sm")
     nlp = None
-
-def get_db_connection():
-    """Get database connection."""
-    return psycopg2.connect(
-        host=os.getenv("DB_HOST", "localhost"),
-        port=os.getenv("DB_PORT", "5432"),
-        database=os.getenv("DB_NAME", "codex"),
-        user=os.getenv("DB_USER", "codex"),
-        password=os.getenv("DB_PASSWORD", "codex")
-    )
 
 def detect_heading_patterns(text: str, only_level_1: bool = False) -> List[Dict[str, Any]]:
     """Detect headings using regex patterns."""
@@ -550,12 +538,8 @@ def store_passages(conn, doc_id: str, chunks: List[Dict[str, Any]]) -> List[str]
 def index_in_meilisearch(passages: List[Dict[str, Any]], passage_ids: List[str], doc_id: str):
     """Index passages in Meilisearch."""
     try:
-        from meilisearch import Client
-        
-        client = Client(
-            os.getenv("MEILI_URL", "http://localhost:7700")
-        )
-        
+        client = get_meili_client()
+
         # Prepare documents for indexing
         documents = []
         for passage, passage_id in zip(passages, passage_ids):

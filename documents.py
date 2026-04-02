@@ -12,24 +12,12 @@ Provides commands for managing documents in the system:
 import os
 import sys
 import click
-import psycopg2
 from psycopg2.extras import RealDictCursor
-from dotenv import load_dotenv
 from typing import List, Dict, Any, Optional
 import json
 from tabulate import tabulate
 
-load_dotenv()
-
-def get_db_connection():
-    """Get database connection."""
-    return psycopg2.connect(
-        host=os.getenv("DB_HOST", "localhost"),
-        port=os.getenv("DB_PORT", "5432"),
-        database=os.getenv("DB_NAME", "codex"),
-        user=os.getenv("DB_USER", "codex"),
-        password=os.getenv("DB_PASSWORD", "codex")
-    )
+from config import get_db_connection, get_meili_client
 
 def get_document_stats(conn, document_id: str) -> Dict[str, Any]:
     """Get detailed stats for a document."""
@@ -153,8 +141,6 @@ def delete_document(conn, document_id: str, confirm: bool = True) -> bool:
 def reindex_document_meilisearch(conn, document_id: str) -> bool:
     """Re-index a document in Meilisearch."""
     try:
-        from meilisearch import Client
-        
         # Get document passages
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""
@@ -193,7 +179,7 @@ def reindex_document_meilisearch(conn, document_id: str) -> bool:
             })
         
         # Index in Meilisearch
-        client = Client(os.getenv("MEILI_URL", "http://localhost:7700"))
+        client = get_meili_client()
         index = client.index("passages")
         index.add_documents(documents, primary_key="id")
         

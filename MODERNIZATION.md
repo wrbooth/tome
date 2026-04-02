@@ -70,15 +70,11 @@ Changes:
 - Answer accuracy improved from 80% to 90% on the 20-question test suite.
 
 ### 7. Extract Shared Modules
-**Status:** Not started
+**Status:** Complete
 
-`get_db_connection()` is duplicated identically across 7 files. Every module independently calls `load_dotenv()` — `search.py` calls it 6 times in different functions. The Meilisearch URL env var is inconsistently named (`MEILI_URL` vs `MEILISEARCH_URL`). The OpenAI client is instantiated independently in multiple places.
+Created `config.py` with shared `get_db_connection()`, `get_meili_client()`, and `get_openai_client()`. Single `load_dotenv()` call. Standardized Meilisearch URL on `MEILI_URL` env var (removed `MEILISEARCH_URL`/`MEILISEARCH_MASTER_KEY` variants).
 
-**Changes needed:**
-- Create a `config.py` module that loads env once and exposes configuration
-- Create a `db.py` module with the shared `get_db_connection()` function
-- Standardize the Meilisearch URL env var name
-- Create a shared OpenAI client singleton
+Updated 8 files to import from config: `search.py`, `answer_generator.py`, `embed.py`, `documents.py`, `ingest.py`, `batch_reingest.py`, `reingest_clean.py`, `api/main.py`. Removed 7 duplicate `get_db_connection()` definitions, 11 `load_dotenv()` calls, and inconsistent client instantiation.
 
 ## Low Priority
 

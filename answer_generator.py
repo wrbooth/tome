@@ -3,16 +3,12 @@
 LLM-based answer generation for search results.
 """
 
-import os
 import json
 from typing import List, Dict, Any, Optional
-from dotenv import load_dotenv
-from openai import OpenAI
 
-load_dotenv()
+from config import get_openai_client
 
-# Configure OpenAI client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = get_openai_client()
 
 def format_chunks_for_llm(chunks: List[Dict[str, Any]]) -> str:
     """
