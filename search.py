@@ -259,77 +259,69 @@ def format_results(results: List[Dict[str, Any]], scores: Dict[str, float]) -> s
     
     return '\n'.join(output)
 
-def generate_answer(query: str, query_type: str, results: List[Dict[str, Any]]) -> str:
+def generate_answer(query: str, results: List[Dict[str, Any]]) -> str:
     """Generate an LLM-based answer from search results."""
     if not results:
         return "I couldn't find any relevant information to answer your question."
-    
+
     try:
-        # Import the answer generator
         from answer_generator import answer_query
-        
-        # Generate answer using LLM
-        answer = answer_query(query, results)
-        return answer
-        
-    except ImportError:
-        # Fallback to simple answer if LLM module not available
+        return answer_query(query, results)
+    except Exception as e:
         top_result = results[0]
         title = top_result.get('title', 'Unknown Document')
         return f"Top result: {top_result['text'][:300]}... (Source: {title}, p. {top_result['page']})"
-    except Exception as e:
-        # Fallback to simple answer if LLM fails
-        top_result = results[0]
-        title = top_result.get('title', 'Unknown Document')
-        return f"Top result: {top_result['text'][:300]}... (Source: {title}, p. {top_result['page']})\n\nNote: LLM answer generation failed: {str(e)}"
+
+def search_codex(query: str, k: int = 20, document_id: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Core search pipeline: hybrid search → rerank → answer generation.
+
+    Returns dict with keys: query_type, answer, results (list of dicts with
+    id, text, page, title, headings_path, score).
+    """
+    query_analysis = analyze_query(query)
+    query_type = query_analysis["query_type"]
+
+    candidates = hybrid_search(query, k=200, document_id=document_id)
+    if not candidates:
+        return {"query_type": query_type, "answer": "No candidates found.", "results": []}
+
+    conn = get_db_connection()
+    reranked = rerank_candidates(candidates, query, conn, k=k)
+
+    passage_ids = [pid for pid, _ in reranked]
+    passage_details = get_passage_details(conn, passage_ids)
+    score_map = {pid: score for pid, score in reranked}
+
+    # Attach scores to results
+    for detail in passage_details:
+        detail["score"] = score_map.get(detail["id"], 0.0)
+
+    answer = generate_answer(query, passage_details)
+    conn.close()
+
+    return {"query_type": query_type, "answer": answer, "results": passage_details}
 
 @click.command()
 @click.option('--q', 'query', required=True, help='Search query')
 @click.option('--k', default=20, type=int, help='Number of results to return')
 @click.option('--doc', 'document_id', help='Filter by document ID')
 def main(query: str, k: int, document_id: Optional[str]):
-    """Search passages using hybrid retrieval with RRF fusion."""
-    
+    """Search passages using hybrid search with cross-encoder re-ranking."""
+
     print(f"Searching for: {query}")
 
-    # Analyze query (single LLM call for classification, entities, and expansions)
-    query_analysis = analyze_query(query)
-    query_type = query_analysis["query_type"]
-    print(f"Query type: {query_type}")
+    result = search_codex(query, k=k, document_id=document_id)
+    print(f"Query type: {result['query_type']}")
 
-    # Hybrid search (keyword + semantic in one Meilisearch call)
-    print("Running hybrid search...")
-    candidates = hybrid_search(query, k=200, document_id=document_id)
-    print(f"Found {len(candidates)} candidates")
-
-    if not candidates:
-        print("No candidates found")
-        return
-
-    # Re-rank with cross-encoder
-    conn = get_db_connection()
-    print("Re-ranking with cross-encoder...")
-    reranked_candidates = rerank_candidates(candidates, query, conn, k=k)
-    
-    # Get passage details
-    passage_ids = [pid for pid, _ in reranked_candidates]
-    passage_details = get_passage_details(conn, passage_ids)
-
-    # Create score mapping
-    score_map = {pid: score for pid, score in reranked_candidates}
-    
-    # Generate answer
-    answer = generate_answer(query, query_type, passage_details)
     print(f"\nAnswer:")
     print("=" * 80)
-    print(answer)
-    
-    # Format and display results
-    print(f"\nTop {len(passage_details)} results:")
+    print(result["answer"])
+
+    print(f"\nTop {len(result['results'])} results:")
     print("=" * 80)
-    print(format_results(passage_details, score_map))
-    
-    conn.close()
+    scores = {r["id"]: r["score"] for r in result["results"]}
+    print(format_results(result["results"], scores))
 
 if __name__ == "__main__":
     main()

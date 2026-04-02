@@ -88,15 +88,13 @@ Also fixed a bug where `index_in_meilisearch()` failed when the Meilisearch inde
 Chunk count changed from 202 to 230 (heuristic was overestimating, so chunks were under-filled).
 
 ### 9. Refactor API to Share Code with CLI
-**Status:** Not started
+**Status:** Complete
 
-`api/main.py` reimplements the search pipeline but skips answer generation and query expansion. It adds `..` to `sys.path` to import from the parent directory. The API and CLI should share the same core logic.
+Extracted `search_codex()` in `search.py` as the core pipeline function (hybrid search → rerank → answer generation). Both the CLI `main()` and `api/main.py` now call it.
 
-**Changes needed:**
-- Extract core search logic into a shared module (e.g., `search_engine.py`)
-- Have both `api/main.py` and `search.py` CLI call into the shared module
-- Add answer generation to the API
-- Remove the `sys.path` hack in favor of proper package structure
+Changes:
+- `search.py`: Added `search_codex()` returning `{query_type, answer, results}`. Simplified `main()` to call it and format output. Simplified `generate_answer()` signature.
+- `api/main.py`: Replaced inline search pipeline with single `search_codex()` call. Added `SearchResponse` model with `answer` field. API now returns LLM-generated answers (previously skipped). Removed duplicate result-assembly logic.
 
 ### 10. Refactor Subprocess Orchestration to Direct Imports
 **Status:** Not started
