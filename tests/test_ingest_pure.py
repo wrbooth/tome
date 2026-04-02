@@ -214,10 +214,10 @@ class TestIsQualityHeading:
     def test_valid_heading_mixed_case(self):
         assert is_quality_heading("About The Civil War", 12, False) is True
 
-    def test_appendix_morgan_claims_blocked_by_coordinate_pattern(self):
-        """The APPENDIX+MORGAN+CLAIMS special case never fires because
-        the coordinate pattern [A-Z][^\\w\\s]*\\d+ matches 'E-4' first."""
-        assert is_quality_heading("APPENDIX E-4 MORGAN'S RAID CLAIMS", 12, False) is False
+    def test_appendix_heading_allowed(self):
+        """Appendix headings pass quality check via generic APPENDIX pattern."""
+        assert is_quality_heading("APPENDIX A: Supporting Data", 12, False) is True
+        assert is_quality_heading("APPENDIX E-4 Some Title", 12, False) is True
 
     def test_all_caps_with_spaces_only(self):
         # Pattern: ^[A-Z\s]+$ — ALL CAPS with only spaces

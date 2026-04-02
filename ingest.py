@@ -50,7 +50,7 @@ def detect_heading_patterns(text: str, only_level_1: bool = False) -> List[Dict[
         (r'^APPENDIX\s+[A-Z][-\d]*[:\s]*(.+)$', 1),  # APPENDIX A: Title, APPENDIX E-4: Title
         (r'^Appendix\s+[A-Z][-\d]*[:\s]*(.+)$', 1),  # Appendix A: Title, Appendix E-4: Title
         (r'.*APPENDIX\s+[A-Z][-\d]*[:\s]*([^|]+)', 1),  # APPENDIX E-4: Title (anywhere in line)
-        (r'.*APPENDIX\s+[A-Z][-\d]*\s+([^|]+?)(?:\s+Damage|\s+Claimant|$)', 1),  # APPENDIX E-4 MORGAN'S RAID CLAIMS
+        (r'.*APPENDIX\s+[A-Z][-\d]*\s+([A-Z][^|]+?)$', 1),  # APPENDIX E-4 TITLE WORDS (no colon separator)
         (r'^[A-Z][A-Z\s]{8,}$', 1),              # Long ALL CAPS TITLE (8+ chars, major sections)
     ]
     
@@ -256,19 +256,23 @@ def is_quality_heading(text: str, font_size: float, is_bold: bool) -> bool:
     if len(text) < 5 and not (is_bold and font_size > 12):
         return False
     
+    # Allow appendix headings early — before coordinate/table checks that would reject them
+    if re.match(r'APPENDIX\s+[A-Z][-\d]*[\s:]', text.upper()):
+        return True
+
     # Additional checks for historical documents
     # Skip text that looks like OCR artifacts or formatting
     if re.search(r'[^\w\s]{3,}', text):  # 3+ consecutive symbols
         return False
-    
+
     # Skip text that's mostly punctuation or special characters
     if len(re.findall(r'[^\w\s]', text)) > len(text) * 0.3:
         return False
-    
+
     # Skip text that looks like coordinates or measurements
     if re.search(r'\d+[^\w\s]*[A-Z]', text) or re.search(r'[A-Z][^\w\s]*\d+', text):
         return False
-    
+
     # Skip obvious table headers, lists, and fragments
     table_patterns = [
         r'^[A-Z][a-z]+,\s+[A-Z][a-z]+$',  # "Name, Location" pattern
@@ -279,11 +283,7 @@ def is_quality_heading(text: str, font_size: float, is_bold: bool) -> bool:
         r'^[a-z]{1,3}$',  # Very short lowercase
         r'^\w+\s*\d+\s*\w*$',  # Pattern like "Item 1 A"
     ]
-    
-    # Special case: Allow appendix sections even if they don't meet normal criteria
-    if 'APPENDIX' in text.upper() and 'MORGAN' in text.upper() and 'CLAIMS' in text.upper():
-        return True
-    
+
     for pattern in table_patterns:
         if re.match(pattern, text):
             return False
