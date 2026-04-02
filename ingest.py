@@ -19,7 +19,7 @@ from collections import Counter
 
 import tiktoken
 
-from config import get_db_connection, get_meili_client
+from config import get_db_connection, get_meili_client, EMBEDDING_MODEL
 
 _tokenizer = tiktoken.get_encoding("cl100k_base")
 
@@ -587,7 +587,7 @@ def index_in_meilisearch(passages: List[Dict[str, Any]], passage_ids: List[str],
                     "default": {
                         "source": "openAi",
                         "apiKey": openai_key,
-                        "model": "text-embedding-3-small",
+                        "model": EMBEDDING_MODEL,
                         "documentTemplate": "{{doc.text}}"
                     }
                 })
@@ -1048,6 +1048,55 @@ def rank_headings_by_relevance(query: str, headings: List[Dict[str, Any]], limit
         scored_headings.sort(key=lambda x: x['relevance_score'], reverse=True)
         return scored_headings[:limit]
 
+def ingest_document(file_path: str, title: Optional[str] = None,
+                    authors: Optional[str] = None, pub_year: Optional[int] = None,
+                    debug: bool = False) -> str:
+    """
+    Ingest a document into the Codex system. Returns the document ID.
+
+    Can be called directly from Python (e.g. batch_reingest) or via the CLI.
+    """
+    if file_path.lower().endswith('.pdf'):
+        print(f"Extracting text from PDF: {file_path}")
+        pages = extract_text_from_pdf(file_path)
+    elif file_path.lower().endswith('.txt'):
+        print(f"Extracting text from TXT: {file_path}")
+        pages = extract_text_from_txt(file_path)
+    else:
+        raise ValueError(f"Unsupported file type: {file_path}")
+
+    print(f"Extracted {len(pages)} pages")
+
+    print("Merging heading detection...")
+    is_pdf = file_path.lower().endswith('.pdf')
+    pages = merge_heading_detection(pages, is_pdf=is_pdf)
+
+    if debug:
+        debug_headings(pages)
+
+    print("Chunking text...")
+    chunks = chunk_text_with_headings(pages, document_title=title)
+    print(f"Created {len(chunks)} chunks")
+
+    conn = get_db_connection()
+
+    if not title:
+        title = os.path.basename(file_path)
+
+    author_list = [a.strip() for a in authors.split(',') if a.strip()] if authors else None
+
+    doc_id = store_document(conn, title, file_path, author_list, pub_year)
+    print(f"Stored document: {title} (ID: {doc_id})")
+
+    passage_ids = store_passages(conn, doc_id, chunks)
+    print(f"Stored {len(passage_ids)} passages")
+
+    index_in_meilisearch(chunks, passage_ids, doc_id)
+
+    conn.close()
+    print("Ingestion complete!")
+    return doc_id
+
 @click.command()
 @click.argument('file_path', type=click.Path(exists=True))
 @click.option('--title', help='Document title')
@@ -1056,60 +1105,11 @@ def rank_headings_by_relevance(query: str, headings: List[Dict[str, Any]], limit
 @click.option('--debug', is_flag=True, help='Show debug information for heading detection')
 def main(file_path: str, title: str, authors: str, pub_year: int, debug: bool):
     """Ingest a document (PDF or TXT) into the Codex system."""
-    
-    # Determine file type and extract text
-    if file_path.lower().endswith('.pdf'):
-        print(f"Extracting text from PDF: {file_path}")
-        pages = extract_text_from_pdf(file_path)
-    elif file_path.lower().endswith('.txt'):
-        print(f"Extracting text from TXT: {file_path}")
-        pages = extract_text_from_txt(file_path)
-    else:
-        print("Error: Unsupported file type. Use PDF or TXT files.")
-        sys.exit(1)
-    
-    print(f"Extracted {len(pages)} pages")
-    
-    # Merge heading detection across pages
-    print("Merging heading detection...")
-    is_pdf = file_path.lower().endswith('.pdf')
-    pages = merge_heading_detection(pages, is_pdf=is_pdf)
-    
-    # Debug output if requested
-    if debug:
-        debug_headings(pages)
-    
-    # Chunk the text
-    print("Chunking text...")
-    chunks = chunk_text_with_headings(pages, document_title=title)
-    print(f"Created {len(chunks)} chunks")
-    
-    # Connect to database
     try:
-        conn = get_db_connection()
-        print("Connected to database")
+        ingest_document(file_path, title, authors, pub_year, debug)
     except Exception as e:
-        print(f"Error connecting to database: {e}")
+        print(f"Error: {e}")
         sys.exit(1)
-    
-    # Store document
-    if not title:
-        title = os.path.basename(file_path)
-    
-    author_list = [a.strip() for a in authors.split(',') if a.strip()] if authors else None
-    
-    doc_id = store_document(conn, title, file_path, author_list, pub_year)
-    print(f"Stored document: {title} (ID: {doc_id})")
-    
-    # Store passages
-    passage_ids = store_passages(conn, doc_id, chunks)
-    print(f"Stored {len(passage_ids)} passages")
-    
-    # Index in Meilisearch
-    index_in_meilisearch(chunks, passage_ids, doc_id)
-    
-    conn.close()
-    print("Ingestion complete!")
 
 if __name__ == "__main__":
     main()

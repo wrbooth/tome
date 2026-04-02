@@ -97,25 +97,19 @@ Changes:
 - `api/main.py`: Replaced inline search pipeline with single `search_codex()` call. Added `SearchResponse` model with `answer` field. API now returns LLM-generated answers (previously skipped). Removed duplicate result-assembly logic.
 
 ### 10. Refactor Subprocess Orchestration to Direct Imports
-**Status:** Not started
+**Status:** Complete
 
-`batch_reingest.py`, `test_search.py`, and others call scripts via `subprocess.run()` rather than importing functions. This loses error details (e.g., the empty stderr from the embedding failure).
+Extracted callable functions from `ingest.py` (`ingest_document()`) and `embed.py` (`run_embeddings()`). Updated `batch_reingest.py` to call them directly instead of via `subprocess.run()`. Errors now surface immediately with full tracebacks instead of being lost in captured stderr.
 
-**Changes needed:**
-- Refactor `batch_reingest.py` to import and call functions from `ingest.py` and `embed.py` directly
-- Refactor `test_search.py` to import search functions instead of running `search.py` as a subprocess
-- Reserve subprocess usage for true process isolation needs
+`test_search.py` still uses subprocess since it needs to test the CLI interface specifically — this is intentional.
 
 ### 11. Centralize Model Configuration
-**Status:** Not started
+**Status:** Complete
 
-Model names are hardcoded in multiple places with different defaults:
-- `gpt-4o-mini` in `search.py` (4 places)
-- `gpt-4` as a default in `answer_generator.py:42`
-- `gpt-5-mini-2025-08-07` as the actual default at `answer_generator.py:186`
-- `text-embedding-3-small` / `text-embedding-3-large` inconsistency in `embed.py` and `search.py`
+Added model constants to `config.py`, overridable via environment variables:
+- `QUERY_ANALYSIS_MODEL` (default: `gpt-4o-mini`)
+- `ANSWER_MODEL` (default: `gpt-5-mini-2025-08-07`)
+- `EMBEDDING_MODEL` (default: `text-embedding-3-small`)
+- `RERANKER_MODEL` (default: `cross-encoder/ms-marco-MiniLM-L-6-v2`)
 
-**Changes needed:**
-- Define all model names in `config.py` or as environment variables
-- Reference the centralized config throughout the codebase
-- Make it easy to swap models without editing multiple files
+Updated `search.py`, `answer_generator.py`, `embed.py`, and `ingest.py` to reference these constants. Models can now be swapped by setting env vars without editing code.

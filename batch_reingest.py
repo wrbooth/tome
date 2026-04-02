@@ -14,7 +14,6 @@ import sys
 import click
 from psycopg2.extras import RealDictCursor
 from typing import List, Dict, Any, Optional
-import subprocess
 from pathlib import Path
 
 from config import get_db_connection, get_meili_client
@@ -112,76 +111,32 @@ def list_all_documents() -> List[Dict[str, Any]]:
     finally:
         conn.close()
 
-def reingest_document(file_path: str, title: str, authors: Optional[str] = None, 
+def reingest_document(file_path: str, title: str, authors: Optional[str] = None,
                      pub_year: Optional[int] = None, debug: bool = False) -> bool:
     """Re-ingest a single document."""
     print(f"Re-ingesting document: {Path(file_path).name}")
-    
+
     try:
-        # Build command
-        cmd = [
-            sys.executable, "ingest.py", 
-            file_path,
-            "--title", title
-        ]
-        
-        if authors:
-            cmd.extend(["--authors", authors])
-        
-        if pub_year:
-            cmd.extend(["--pub-year", str(pub_year)])
-        
-        if debug:
-            cmd.append("--debug")
-        
-        # Run the ingest command
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        
-        if result.returncode == 0:
-            print(f"✅ Successfully re-ingested: {Path(file_path).name}")
-            return True
-        else:
-            print(f"❌ Error re-ingesting {Path(file_path).name}:")
-            print(result.stderr)
-            return False
-            
+        from ingest import ingest_document
+        ingest_document(file_path, title, authors, pub_year, debug)
+        print(f"✅ Successfully re-ingested: {Path(file_path).name}")
+        return True
     except Exception as e:
-        print(f"❌ Exception re-ingesting {Path(file_path).name}: {e}")
+        print(f"❌ Error re-ingesting {Path(file_path).name}: {e}")
         return False
 
 def run_embedding(document_ids: Optional[List[str]] = None):
     """Run the embedding process."""
     print("Running embedding process...")
-    
+
     try:
-        # Build command
-        cmd = [sys.executable, "embed.py"]
-        
-        if document_ids:
-            # Process specific documents
-            for doc_id in document_ids:
-                print(f"  Generating embeddings for document: {doc_id}")
-                doc_cmd = cmd + ["--doc", doc_id]
-                result = subprocess.run(doc_cmd, capture_output=True, text=True)
-                
-                if result.returncode == 0:
-                    print(f"✅ Embeddings completed for {doc_id}")
-                else:
-                    print(f"❌ Error generating embeddings for {doc_id}:")
-                    print(result.stderr)
+        from embed import run_embeddings
+        success = run_embeddings(document_ids)
+        if success:
+            print("✅ Embedding completed successfully")
         else:
-            # Process all documents
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            
-            if result.returncode == 0:
-                print("✅ Embedding completed successfully")
-            else:
-                print("❌ Error during embedding:")
-                print(result.stderr)
-                return False
-        
-        return True
-        
+            print("❌ Embedding generation failed")
+        return success
     except Exception as e:
         print(f"❌ Error running embedding: {e}")
         return False

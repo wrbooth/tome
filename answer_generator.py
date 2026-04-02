@@ -6,7 +6,7 @@ LLM-based answer generation for search results.
 import json
 from typing import List, Dict, Any, Optional
 
-from config import get_openai_client
+from config import get_openai_client, ANSWER_MODEL
 
 client = get_openai_client()
 
@@ -35,7 +35,7 @@ def format_chunks_for_llm(chunks: List[Dict[str, Any]]) -> str:
     
     return "\n".join(formatted_chunks)
 
-def generate_answer_with_llm(query: str, chunks: List[Dict[str, Any]], model: str = "gpt-4") -> Dict[str, Any]:
+def generate_answer_with_llm(query: str, chunks: List[Dict[str, Any]], model: str = ANSWER_MODEL) -> Dict[str, Any]:
     """
     Generate an answer using LLM based on provided chunks.
     
@@ -179,7 +179,7 @@ def format_answer_with_sources(answer_data: Dict[str, Any]) -> str:
     else:
         return answer
 
-def answer_query(query: str, search_results: List[Dict[str, Any]], model: str = "gpt-5-mini-2025-08-07") -> str:
+def answer_query(query: str, search_results: List[Dict[str, Any]], model: str = ANSWER_MODEL) -> str:
     """
     Main function to answer a query using search results and LLM.
     

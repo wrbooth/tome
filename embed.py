@@ -13,9 +13,9 @@ import numpy as np
 from typing import List, Dict, Any, Optional
 import tiktoken
 
-from config import get_db_connection, get_openai_client
+from config import get_db_connection, get_openai_client, EMBEDDING_MODEL
 
-def get_openai_embeddings(texts: List[str], model: str = "text-embedding-3-small") -> List[List[float]]:
+def get_openai_embeddings(texts: List[str], model: str = EMBEDDING_MODEL) -> List[List[float]]:
     """Get embeddings from OpenAI API."""
     try:
         client = get_openai_client()
@@ -101,100 +101,94 @@ def validate_embedding_dimension(embedding: List[float], expected_dim: int = 153
     """Validate that embedding has the expected dimension."""
     return len(embedding) == expected_dim
 
-@click.command()
-@click.option('--provider', default='openai', type=click.Choice(['openai', 'local']), 
-              help='Embedding provider')
-@click.option('--model', default='text-embedding-3-small', 
-              help='Model name (for OpenAI) or model path (for local)')
-@click.option('--batch-size', default=100, type=int, 
-              help='Batch size for processing')
-@click.option('--limit', default=1000, type=int, 
-              help='Maximum number of passages to process')
-@click.option('--doc', 'document_id', help='Process only specific document ID')
-@click.option('--documents', help='Comma-separated list of document IDs')
-def main(provider: str, model: str, batch_size: int, limit: int, document_id: Optional[str], documents: Optional[str]):
-    """Generate embeddings for passages that don't have them yet."""
-    
-    # Connect to database
-    try:
-        conn = get_db_connection()
-        print("Connected to database")
-    except Exception as e:
-        print(f"Error connecting to database: {e}")
-        sys.exit(1)
-    
-    # Handle document filtering
-    target_document_ids = []
-    if document_id:
-        target_document_ids = [document_id]
-    elif documents:
-        target_document_ids = [doc_id.strip() for doc_id in documents.split(',')]
-    
-    # Get unembedded passages
-    if target_document_ids:
-        print(f"Processing documents: {', '.join(target_document_ids)}")
+def run_embeddings(document_ids: Optional[List[str]] = None, provider: str = "openai",
+                   model: str = EMBEDDING_MODEL, batch_size: int = 100,
+                   limit: int = 1000) -> bool:
+    """
+    Generate embeddings for passages that don't have them yet.
+
+    Can be called directly from Python (e.g. batch_reingest) or via the CLI.
+    Returns True on success.
+    """
+    conn = get_db_connection()
+    print("Connected to database")
+
+    if document_ids:
+        print(f"Processing documents: {', '.join(document_ids)}")
         all_passages = []
-        for doc_id in target_document_ids:
-            doc_passages = get_unembedded_passages(conn, limit, doc_id)
-            all_passages.extend(doc_passages)
-        passages = all_passages[:limit]  # Respect overall limit
+        for doc_id in document_ids:
+            all_passages.extend(get_unembedded_passages(conn, limit, doc_id))
+        passages = all_passages[:limit]
     else:
         passages = get_unembedded_passages(conn, limit)
-    
+
     if not passages:
         print("No passages found without embeddings")
         conn.close()
-        return
-    
+        return True
+
     print(f"Found {len(passages)} passages without embeddings")
-    
-    # Extract text for embedding
+
     texts = [p['text'] for p in passages]
     passage_ids = [p['id'] for p in passages]
-    
-    # Generate embeddings
+
     print(f"Generating embeddings using {provider} provider...")
-    
     if provider == 'openai':
         embeddings = get_openai_embeddings(texts, model)
-    else:  # local
+    else:
         embeddings = get_local_embeddings(texts, model)
-    
+
     if not embeddings:
         print("Failed to generate embeddings")
         conn.close()
-        sys.exit(1)
-    
-    # Validate embeddings
+        return False
+
     print(f"Generated {len(embeddings)} embeddings")
-    
-    # Check dimension
     if embeddings:
         dim = len(embeddings[0])
         print(f"Embedding dimension: {dim}")
-        
         if not validate_embedding_dimension(embeddings[0]):
-            print(f"Warning: Expected dimension 1024, got {dim}")
-    
-    # Update database
+            print(f"Warning: Expected dimension 1536, got {dim}")
+
     print("Updating database...")
     passage_embeddings = list(zip(passage_ids, embeddings))
-    
-    # Process in batches
     for i in range(0, len(passage_embeddings), batch_size):
         batch = passage_embeddings[i:i + batch_size]
         update_passage_embeddings(conn, batch)
         print(f"Updated batch {i//batch_size + 1}/{(len(passage_embeddings) + batch_size - 1)//batch_size}")
-    
-    # Verify completion
+
     remaining = get_unembedded_passages(conn, 1)
     if remaining:
         print(f"Note: {len(remaining)} passages still need embeddings")
     else:
         print("All passages now have embeddings!")
-    
+
     conn.close()
     print("Embedding generation complete!")
+    return True
+
+@click.command()
+@click.option('--provider', default='openai', type=click.Choice(['openai', 'local']),
+              help='Embedding provider')
+@click.option('--model', default=EMBEDDING_MODEL,
+              help='Model name (for OpenAI) or model path (for local)')
+@click.option('--batch-size', default=100, type=int,
+              help='Batch size for processing')
+@click.option('--limit', default=1000, type=int,
+              help='Maximum number of passages to process')
+@click.option('--doc', 'document_id', help='Process only specific document ID')
+@click.option('--documents', help='Comma-separated list of document IDs')
+def main(provider: str, model: str, batch_size: int, limit: int, document_id: Optional[str], documents: Optional[str]):
+    """Generate embeddings for passages that don't have them yet."""
+    doc_ids = None
+    if document_id:
+        doc_ids = [document_id]
+    elif documents:
+        doc_ids = [d.strip() for d in documents.split(',')]
+
+    success = run_embeddings(doc_ids, provider, model, batch_size, limit)
+    if not success:
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

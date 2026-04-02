@@ -12,7 +12,7 @@ from psycopg2.extras import RealDictCursor
 import json
 from typing import List, Dict, Any, Tuple, Optional
 
-from config import get_db_connection, get_meili_client, get_openai_client
+from config import get_db_connection, get_meili_client, get_openai_client, QUERY_ANALYSIS_MODEL, RERANKER_MODEL
 
 def analyze_query(query: str) -> Dict[str, Any]:
     """
@@ -67,7 +67,7 @@ Given a user query, produce a JSON object with the following fields:
 
         client = get_openai_client()
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=QUERY_ANALYSIS_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": query}
@@ -170,7 +170,7 @@ def _get_reranker():
     """Lazy-load the cross-encoder re-ranker model."""
     if not hasattr(_get_reranker, "_model"):
         from sentence_transformers import CrossEncoder
-        _get_reranker._model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+        _get_reranker._model = CrossEncoder(RERANKER_MODEL)
     return _get_reranker._model
 
 def rerank_candidates(candidates: List[Tuple[str, float]], query: str, conn, k: int = 20) -> List[Tuple[str, float]]:

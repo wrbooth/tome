@@ -9,6 +9,12 @@ from meilisearch import Client as MeiliClient
 
 load_dotenv()
 
+# Model configuration
+QUERY_ANALYSIS_MODEL = os.getenv("QUERY_ANALYSIS_MODEL", "gpt-4o-mini")
+ANSWER_MODEL = os.getenv("ANSWER_MODEL", "gpt-5-mini-2025-08-07")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+RERANKER_MODEL = os.getenv("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+
 # Database
 
 def get_db_connection():
