@@ -79,14 +79,13 @@ Updated 8 files to import from config: `search.py`, `answer_generator.py`, `embe
 ## Low Priority
 
 ### 8. Use Tiktoken for Chunking
-**Status:** Not started
+**Status:** Complete
 
-Chunking estimates tokens as `word_count * 1.3` (`ingest.py:396`). `tiktoken` is already a dependency (imported in `embed.py`) but never used for chunk size calculation.
+Replaced `len(paragraph.split()) * 1.3` heuristic with precise `tiktoken` token counting using the `cl100k_base` encoding (matches text-embedding-3-small). Added `count_tokens()` helper and module-level tokenizer singleton.
 
-**Changes needed:**
-- Replace the `word_count * 1.3` heuristic with actual `tiktoken` token counting in `chunk_text_with_headings()`
-- Consider semantic/recursive chunking strategies that respect section boundaries
-- Evaluate whether the current `max_tokens=300` limit is appropriate
+Also fixed a bug where `index_in_meilisearch()` failed when the Meilisearch index didn't exist (after a clear) — now handles missing index gracefully and re-configures the embedder.
+
+Chunk count changed from 202 to 230 (heuristic was overestimating, so chunks were under-filled).
 
 ### 9. Refactor API to Share Code with CLI
 **Status:** Not started

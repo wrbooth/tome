@@ -17,7 +17,15 @@ from typing import List, Dict, Any, Tuple, Optional
 import json
 from collections import Counter
 
+import tiktoken
+
 from config import get_db_connection, get_meili_client
+
+_tokenizer = tiktoken.get_encoding("cl100k_base")
+
+def count_tokens(text: str) -> int:
+    """Count tokens using the cl100k_base tokenizer."""
+    return len(_tokenizer.encode(text))
 
 # Load spaCy model for NER
 try:
@@ -381,7 +389,7 @@ def chunk_text_with_headings(pages: List[Dict[str, Any]], max_tokens: int = 300,
                 if len(current_headings) <= 3:  # Only show first few levels to avoid spam
                     print(f"  Page {page_num}: Heading level {level}: {heading_text}")
             
-            para_tokens = len(paragraph.split()) * 1.3  # Rough token estimation
+            para_tokens = count_tokens(paragraph)
             
             # If adding this paragraph would exceed max_tokens, save current chunk
             if current_tokens + para_tokens > max_tokens and current_chunk:
@@ -410,7 +418,7 @@ def chunk_text_with_headings(pages: List[Dict[str, Any]], max_tokens: int = 300,
                 # Start new chunk with minimal overlap (just the last paragraph)
                 if len(current_chunk) > 0:
                     current_chunk = [current_chunk[-1]]
-                    current_tokens = len(current_chunk[0].split()) * 1.3
+                    current_tokens = count_tokens(current_chunk[0])
                 else:
                     current_chunk = []
                     current_tokens = 0
@@ -565,9 +573,14 @@ def index_in_meilisearch(passages: List[Dict[str, Any]], passage_ids: List[str],
         # Create or update index
         index = client.index("passages")
 
-        # Ensure OpenAI embedder is configured for hybrid search
-        settings = index.get_settings()
-        if not settings.get("embedders"):
+        # Check if index exists; if not, configure embedder and filterable attributes
+        try:
+            settings = index.get_settings()
+            needs_setup = not settings.get("embedders")
+        except Exception:
+            needs_setup = True
+
+        if needs_setup:
             openai_key = os.getenv("OPENAI_API_KEY")
             if openai_key:
                 task = index.update_embedders({
@@ -578,12 +591,9 @@ def index_in_meilisearch(passages: List[Dict[str, Any]], passage_ids: List[str],
                         "documentTemplate": "{{doc.text}}"
                     }
                 })
-                client.wait_for_task(task.task_uid, timeout_in_ms=60000)
+                client.wait_for_task(task.task_uid, timeout_in_ms=300000)
 
-        # Ensure document_id is filterable
-        filterable = settings.get("filterableAttributes", [])
-        if "document_id" not in filterable:
-            task = index.update_filterable_attributes(filterable + ["document_id"])
+            task = index.update_filterable_attributes(["document_id"])
             client.wait_for_task(task.task_uid, timeout_in_ms=60000)
 
         index.add_documents(documents, primary_key="id")
