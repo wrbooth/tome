@@ -80,6 +80,29 @@
     display: none;
 }
 
+/* Document list item — show info icon on hover, subtle separator */
+.doc-item {
+    border-bottom: 1px solid #f1f5f9;
+}
+.doc-item:last-child {
+    border-bottom: none;
+}
+.doc-item .doc-info-btn {
+    opacity: 0;
+    transition: opacity 150ms ease;
+}
+.doc-item:hover .doc-info-btn {
+    opacity: 1;
+}
+
+/* Two-line title clamp */
+.line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
 /* Sidebar collapse/expand */
 #sidebar {
     transition: width 200ms ease, opacity 150ms ease, padding 200ms ease, border-width 200ms ease;

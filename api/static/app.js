@@ -65,7 +65,7 @@
     // ── DOM helpers ──────────────────────────────────────────────────────
 
     function getMessageContainer() {
-        return chatMessages.querySelector('.max-w-3xl');
+        return chatMessages.querySelector('.max-w-4xl');
     }
 
     function appendUserMessage(text) {
@@ -73,7 +73,7 @@
         var div = document.createElement('div');
         div.className = 'flex justify-end';
         div.innerHTML =
-            '<div class="bg-blue-600 text-white rounded-2xl rounded-br-sm px-4 py-2.5 max-w-lg text-sm">' +
+            '<div class="bg-blue-600 text-white rounded-2xl rounded-br-sm px-5 py-3 max-w-xl text-base">' +
             escapeHtml(text) +
             '</div>';
         container.appendChild(div);
@@ -86,7 +86,7 @@
         wrapper.className = 'space-y-3';
 
         var bubble = document.createElement('div');
-        bubble.className = 'bg-white border border-slate-200 rounded-2xl rounded-bl-sm px-5 py-4 max-w-2xl shadow-sm';
+        bubble.className = 'max-w-none';
 
         var typingEl = document.createElement('div');
         typingEl.className = 'flex gap-1.5 py-1';
@@ -96,7 +96,7 @@
             '<span class="typing-dot"></span>';
 
         var contentEl = document.createElement('div');
-        contentEl.className = 'prose text-sm hidden';
+        contentEl.className = 'prose text-base hidden';
 
         bubble.appendChild(typingEl);
         bubble.appendChild(contentEl);
@@ -120,7 +120,7 @@
         cardsEl.className = 'space-y-1.5 mt-3';
 
         var heading = document.createElement('p');
-        heading.className = 'text-xs font-medium text-slate-400 uppercase tracking-wide mb-2';
+        heading.className = 'text-sm font-medium text-slate-400 uppercase tracking-wide mb-2';
         heading.textContent = sorted.length + ' source' + (sorted.length !== 1 ? 's' : '') + ' found';
         cardsEl.appendChild(heading);
 
@@ -137,11 +137,11 @@
             var scorePercent = Math.round(r.score * 100);
 
             card.innerHTML =
-                '<summary class="flex items-start gap-3 px-4 py-2.5 cursor-pointer hover:bg-slate-50 select-none text-sm">' +
-                    '<span class="chevron text-slate-400 mt-0.5 text-xs shrink-0">&#9654;</span>' +
+                '<summary class="flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-slate-50 select-none text-sm">' +
+                    '<span class="chevron text-slate-400 mt-0.5 text-sm shrink-0">&#9654;</span>' +
                     '<div class="flex-1 min-w-0">' +
-                        '<div class="font-medium text-slate-700 truncate">' + escapeHtml(r.title) + '</div>' +
-                        '<div class="flex items-center gap-2 mt-0.5 text-xs text-slate-400">' +
+                        '<div class="font-medium text-slate-700 truncate text-sm">' + escapeHtml(r.title) + '</div>' +
+                        '<div class="flex items-center gap-2 mt-0.5 text-sm text-slate-400">' +
                             '<span>p.\u00a0' + r.page + '</span>' +
                             (breadcrumb ? '<span class="text-slate-300">|</span><span class="truncate">' + breadcrumb + '</span>' : '') +
                         '</div>' +
@@ -150,10 +150,10 @@
                         '<div class="w-12 h-1 bg-slate-200 rounded-full overflow-hidden">' +
                             '<div class="h-full bg-blue-500 rounded-full" style="width:' + scorePercent + '%"></div>' +
                         '</div>' +
-                        '<span class="text-xs text-slate-400 tabular-nums">.' + String(scorePercent).padStart(2, '0') + '</span>' +
+                        '<span class="text-sm text-slate-400 tabular-nums">.' + String(scorePercent).padStart(2, '0') + '</span>' +
                     '</div>' +
                 '</summary>' +
-                '<div class="px-4 pb-3 text-xs text-slate-600 border-t border-slate-100 pt-2 ml-6">' +
+                '<div class="px-4 pb-3 text-sm text-slate-600 border-t border-slate-100 pt-2 ml-6">' +
                     '<p class="whitespace-pre-wrap leading-relaxed">' + escapeHtml(r.text) + '</p>' +
                 '</div>';
 
@@ -254,8 +254,8 @@
                     break;
 
                 case 'token':
-                    // _sse_event sends strings as bare data (not JSON-encoded)
-                    tokenBuffer += data;
+                    try { tokenBuffer += JSON.parse(data); }
+                    catch (e) { tokenBuffer += data; }
                     if (!rafPending) {
                         rafPending = true;
                         requestAnimationFrame(flushTokens);
@@ -331,12 +331,18 @@
         }
         var container = getMessageContainer();
         container.innerHTML =
-            '<div id="welcome" class="text-center mt-24 space-y-3">' +
-                '<div class="text-4xl">&#128218;</div>' +
-                '<p class="text-lg text-slate-500">Ask a question about the indexed documents</p>' +
-                '<p class="text-sm text-slate-400">Results are drawn from historical records, deeds, and local history materials.</p>' +
+            '<div id="welcome" class="text-center mt-20 space-y-4">' +
+                '<div class="text-5xl">&#128218;</div>' +
+                '<p class="text-xl text-slate-600 font-medium">Ask a question about the indexed documents</p>' +
+                '<p class="text-base text-slate-400">Results are drawn from historical records, deeds, and local history materials.</p>' +
+                '<div class="pt-4 flex flex-wrap justify-center gap-2">' +
+                    '<button class="suggested-query text-sm px-4 py-2 rounded-full border border-slate-200 text-slate-500 hover:text-slate-700 hover:border-slate-300 hover:bg-white transition-colors">Who were the earliest settlers?</button>' +
+                    '<button class="suggested-query text-sm px-4 py-2 rounded-full border border-slate-200 text-slate-500 hover:text-slate-700 hover:border-slate-300 hover:bg-white transition-colors">What industries were prominent?</button>' +
+                    '<button class="suggested-query text-sm px-4 py-2 rounded-full border border-slate-200 text-slate-500 hover:text-slate-700 hover:border-slate-300 hover:bg-white transition-colors">Tell me about the founding of Cambridge</button>' +
+                '</div>' +
             '</div>';
         welcome = document.getElementById('welcome');
+        bindSuggestedQueries();
         input.focus();
     });
 
@@ -347,6 +353,20 @@
             // Default form submit handles this
         }
     });
+
+    // ── Suggested queries ───────────────────────────────────────────────
+
+    function bindSuggestedQueries() {
+        var btns = document.querySelectorAll('.suggested-query');
+        for (var i = 0; i < btns.length; i++) {
+            btns[i].addEventListener('click', function () {
+                input.value = this.textContent;
+                form.dispatchEvent(new Event('submit'));
+            });
+        }
+    }
+
+    bindSuggestedQueries();
 
     // Focus input on load
     input.focus();

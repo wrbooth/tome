@@ -139,7 +139,7 @@ async def search(request: SearchRequest):
 def _sse_event(event: str, data) -> str:
     """Format a Server-Sent Event string."""
     import json as _json
-    payload = _json.dumps(data) if not isinstance(data, str) else data
+    payload = _json.dumps(data)
     return f"event: {event}\ndata: {payload}\n\n"
 
 
