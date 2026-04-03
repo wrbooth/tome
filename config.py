@@ -2,24 +2,25 @@
 Shared configuration and client singletons for Codex.
 """
 
+import logging
 import os
 import sys
-import logging
 from contextlib import contextmanager
-import psycopg2
-from psycopg2.pool import ThreadedConnectionPool
+
 from dotenv import load_dotenv
 from meilisearch import Client as MeiliClient
+from psycopg2.pool import ThreadedConnectionPool
 
 
 def configure_logging(level=logging.INFO):
     """Configure logging for the Codex application."""
     logging.basicConfig(
         level=level,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S',
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
         stream=sys.stderr,
     )
+
 
 load_dotenv()
 
@@ -32,6 +33,7 @@ RERANKER_MODEL = os.getenv("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-
 # Database
 
 _pool = None
+
 
 def _get_pool():
     """Get or create the connection pool."""
@@ -48,6 +50,7 @@ def _get_pool():
         )
     return _pool
 
+
 @contextmanager
 def db_connection():
     """Get a pooled database connection as a context manager."""
@@ -62,6 +65,7 @@ def db_connection():
     finally:
         pool.putconn(conn)
 
+
 def get_db_connection():
     """Get a database connection from the pool.
 
@@ -70,17 +74,22 @@ def get_db_connection():
     """
     return _get_pool().getconn()
 
+
 # Meilisearch
 
 MEILI_URL = os.getenv("MEILI_URL", "http://localhost:7700")
+
 
 def get_meili_client() -> MeiliClient:
     """Get a Meilisearch client."""
     return MeiliClient(MEILI_URL)
 
+
 # OpenAI
+
 
 def get_openai_client():
     """Get an OpenAI client."""
     from openai import OpenAI
+
     return OpenAI(api_key=os.getenv("OPENAI_API_KEY"))

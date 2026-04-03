@@ -6,8 +6,9 @@ heading hierarchy across pages.
 """
 
 import logging
+from typing import Any
+
 import tiktoken
-from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,11 @@ def count_tokens(text: str) -> int:
     return len(_tokenizer.encode(text))
 
 
-def chunk_text_with_headings(pages: List[Dict[str, Any]], max_tokens: int = 300, document_title: str = None) -> List[Dict[str, Any]]:
+def chunk_text_with_headings(  # noqa: C901
+    pages: list[dict[str, Any]],
+    max_tokens: int = 300,
+    document_title: str | None = None,
+) -> list[dict[str, Any]]:
     """Chunk text while preserving heading hierarchy across pages."""
     chunks = []
     current_headings = []  # Track current heading path across pages
@@ -30,7 +35,7 @@ def chunk_text_with_headings(pages: List[Dict[str, Any]], max_tokens: int = 300,
         headings = page_data.get("headings", [])
 
         # Split by paragraphs
-        paragraphs = [p.strip() for p in text.split('\n') if p.strip()]
+        paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
 
         current_chunk = []
         current_tokens = 0
@@ -38,22 +43,26 @@ def chunk_text_with_headings(pages: List[Dict[str, Any]], max_tokens: int = 300,
 
         for i, paragraph in enumerate(paragraphs):
             # Check if this paragraph is a heading
-            is_heading = any(h['line_number'] == i for h in headings)
+            is_heading = any(h["line_number"] == i for h in headings)
 
             if is_heading:
                 # Update current heading path
-                heading = next(h for h in headings if h['line_number'] == i)
-                level = heading['level']
+                heading = next(h for h in headings if h["line_number"] == i)
+                level = heading["level"]
 
                 # Trim heading path to current level and add new heading
-                current_headings = current_headings[:level-1]
-                heading_text = heading.get('text', heading.get('title', ''))
+                current_headings = current_headings[: level - 1]
+                heading_text = heading.get("text", heading.get("title", ""))
                 current_headings.append(heading_text)
                 chunk_headings = current_headings.copy()
 
                 # Debug output for heading detection
-                if len(current_headings) <= 3:  # Only show first few levels to avoid spam
-                    logger.debug("  Page %d: Heading level %d: %s", page_num, level, heading_text)
+                if (
+                    len(current_headings) <= 3
+                ):  # Only show first few levels to avoid spam
+                    logger.debug(
+                        "  Page %d: Heading level %d: %s", page_num, level, heading_text
+                    )
 
             para_tokens = count_tokens(paragraph)
 
@@ -69,15 +78,17 @@ def chunk_text_with_headings(pages: List[Dict[str, Any]], max_tokens: int = 300,
                 prefix = " | ".join(prefix_parts) + " | " if prefix_parts else ""
 
                 # Save current chunk with document and heading prefix
-                chunk_text = ' '.join(current_chunk)
+                chunk_text = " ".join(current_chunk)
                 full_text = prefix + chunk_text
 
-                chunks.append({
-                    "page": page_num,
-                    "text": full_text,
-                    "original_text": chunk_text,  # Keep original text for reference
-                    "headings_path": chunk_headings.copy()
-                })
+                chunks.append(
+                    {
+                        "page": page_num,
+                        "text": full_text,
+                        "original_text": chunk_text,  # Keep original text for reference
+                        "headings_path": chunk_headings.copy(),
+                    }
+                )
 
                 # Start new chunk with minimal overlap (just the last paragraph)
                 if len(current_chunk) > 0:
@@ -104,18 +115,22 @@ def chunk_text_with_headings(pages: List[Dict[str, Any]], max_tokens: int = 300,
 
             prefix = " | ".join(prefix_parts) + " | " if prefix_parts else ""
 
-            chunk_text = ' '.join(current_chunk)
+            chunk_text = " ".join(current_chunk)
             full_text = prefix + chunk_text
 
-            chunks.append({
-                "page": page_num,
-                "text": full_text,
-                "original_text": chunk_text,
-                "headings_path": chunk_headings.copy()
-            })
+            chunks.append(
+                {
+                    "page": page_num,
+                    "text": full_text,
+                    "original_text": chunk_text,
+                    "headings_path": chunk_headings.copy(),
+                }
+            )
 
     # Log summary of chunks with headings
-    chunks_with_headings = sum(1 for chunk in chunks if chunk['headings_path'])
-    logger.info("Created %d chunks, %d with headings", len(chunks), chunks_with_headings)
+    chunks_with_headings = sum(1 for chunk in chunks if chunk["headings_path"])
+    logger.info(
+        "Created %d chunks, %d with headings", len(chunks), chunks_with_headings
+    )
 
     return chunks

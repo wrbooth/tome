@@ -1,20 +1,23 @@
 """Tests for batch_ingest.py."""
 
-import pytest
 import json
-from unittest.mock import MagicMock, patch, mock_open
-from pathlib import Path
+from unittest.mock import patch
 
+import pytest
 from click.testing import CliRunner
 
 from batch_ingest import (
-    extract_metadata_from_filename, load_metadata_file, get_document_files,
-    ingest_single_document, process_documents_parallel,
-    process_documents_sequential, main,
+    extract_metadata_from_filename,
+    get_document_files,
+    ingest_single_document,
+    load_metadata_file,
+    main,
+    process_documents_parallel,
+    process_documents_sequential,
 )
 
-
 # ── extract_metadata_from_filename ────────────────────────────────────────
+
 
 class TestExtractMetadataFromFilename:
     def test_simple_filename(self):
@@ -35,6 +38,7 @@ class TestExtractMetadataFromFilename:
 
 # ── load_metadata_file ────────────────────────────────────────────────────
 
+
 class TestLoadMetadataFile:
     def test_json_file(self, tmp_path):
         metadata = [
@@ -48,7 +52,9 @@ class TestLoadMetadataFile:
         assert result["doc1.pdf"]["title"] == "Doc 1"
 
     def test_csv_file(self, tmp_path):
-        csv_content = "filename,title,authors\ndoc1.pdf,Doc 1,Author A\ndoc2.pdf,Doc 2,Author B\n"
+        csv_content = (
+            "filename,title,authors\ndoc1.pdf,Doc 1,Author A\ndoc2.pdf,Doc 2,Author B\n"
+        )
         path = tmp_path / "meta.csv"
         path.write_text(csv_content)
         result = load_metadata_file(str(path))
@@ -63,6 +69,7 @@ class TestLoadMetadataFile:
 
 
 # ── get_document_files ────────────────────────────────────────────────────
+
 
 class TestGetDocumentFiles:
     def test_single_pdf_file(self, tmp_path):
@@ -108,9 +115,12 @@ class TestGetDocumentFiles:
 
 # ── ingest_single_document ────────────────────────────────────────────────
 
+
 class TestIngestSingleDocument:
     def test_success(self):
-        with patch("batch_ingest.ingest_document", return_value="doc-123") as mock_ingest:
+        with patch(
+            "batch_ingest.ingest_document", return_value="doc-123"
+        ) as mock_ingest:
             result = ingest_single_document("/path/doc.pdf", {"title": "Doc"})
             assert result["status"] == "success"
             assert result["file_path"] == "/path/doc.pdf"
@@ -119,27 +129,37 @@ class TestIngestSingleDocument:
             )
 
     def test_exception_returns_error(self):
-        with patch("batch_ingest.ingest_document", side_effect=Exception("Process failed")):
+        with patch(
+            "batch_ingest.ingest_document", side_effect=Exception("Process failed")
+        ):
             result = ingest_single_document("/path/doc.pdf", {"title": "Doc"})
             assert result["status"] == "error"
             assert "Process failed" in result["error"]
 
     def test_authors_list_converted_to_string(self):
-        with patch("batch_ingest.ingest_document", return_value="doc-123") as mock_ingest:
-            ingest_single_document("/path/doc.pdf", {"title": "Doc", "authors": ["A", "B"]})
+        with patch(
+            "batch_ingest.ingest_document", return_value="doc-123"
+        ) as mock_ingest:
+            ingest_single_document(
+                "/path/doc.pdf", {"title": "Doc", "authors": ["A", "B"]}
+            )
             mock_ingest.assert_called_once_with(
                 "/path/doc.pdf", title="Doc", authors="A,B", pub_year=None, debug=False
             )
 
     def test_pub_year_converted_to_int(self):
-        with patch("batch_ingest.ingest_document", return_value="doc-123") as mock_ingest:
+        with patch(
+            "batch_ingest.ingest_document", return_value="doc-123"
+        ) as mock_ingest:
             ingest_single_document("/path/doc.pdf", {"title": "Doc", "pub_year": 2000})
             mock_ingest.assert_called_once_with(
                 "/path/doc.pdf", title="Doc", authors=None, pub_year=2000, debug=False
             )
 
     def test_debug_flag(self):
-        with patch("batch_ingest.ingest_document", return_value="doc-123") as mock_ingest:
+        with patch(
+            "batch_ingest.ingest_document", return_value="doc-123"
+        ) as mock_ingest:
             ingest_single_document("/path/doc.pdf", {"title": "Doc"}, debug=True)
             mock_ingest.assert_called_once_with(
                 "/path/doc.pdf", title="Doc", authors=None, pub_year=None, debug=True
@@ -147,6 +167,7 @@ class TestIngestSingleDocument:
 
 
 # ── process_documents_sequential ──────────────────────────────────────────
+
 
 class TestProcessDocumentsSequential:
     def test_processes_all_files(self):
@@ -160,21 +181,31 @@ class TestProcessDocumentsSequential:
     def test_uses_metadata_when_available(self):
         files = ["/path/doc.pdf"]
         metadata_dict = {"doc.pdf": {"title": "Custom Title", "authors": "Author X"}}
-        with patch("batch_ingest.ingest_document", return_value="doc-123") as mock_ingest:
+        with patch(
+            "batch_ingest.ingest_document", return_value="doc-123"
+        ) as mock_ingest:
             process_documents_sequential(files, metadata_dict, debug=False)
             mock_ingest.assert_called_once_with(
-                "/path/doc.pdf", title="Custom Title", authors="Author X",
-                pub_year=None, debug=False
+                "/path/doc.pdf",
+                title="Custom Title",
+                authors="Author X",
+                pub_year=None,
+                debug=False,
             )
 
     def test_falls_back_to_filename_metadata(self):
         files = ["/path/My Report.pdf"]
         metadata_dict = {}
-        with patch("batch_ingest.ingest_document", return_value="doc-123") as mock_ingest:
+        with patch(
+            "batch_ingest.ingest_document", return_value="doc-123"
+        ) as mock_ingest:
             process_documents_sequential(files, metadata_dict, debug=False)
             mock_ingest.assert_called_once_with(
-                "/path/My Report.pdf", title="My Report", authors=None,
-                pub_year=None, debug=False
+                "/path/My Report.pdf",
+                title="My Report",
+                authors=None,
+                pub_year=None,
+                debug=False,
             )
 
     def test_handles_errors(self):
@@ -186,6 +217,7 @@ class TestProcessDocumentsSequential:
 
 # ── process_documents_parallel ────────────────────────────────────────────
 
+
 class TestProcessDocumentsParallel:
     def test_processes_all_files(self):
         files = ["/path/a.pdf", "/path/b.pdf"]
@@ -195,7 +227,9 @@ class TestProcessDocumentsParallel:
 
     def test_handles_future_exception(self):
         files = ["/path/a.pdf"]
-        with patch("batch_ingest.ingest_document", side_effect=Exception("Process crash")):
+        with patch(
+            "batch_ingest.ingest_document", side_effect=Exception("Process crash")
+        ):
             results = process_documents_parallel(files, {}, max_workers=1, debug=False)
             assert len(results) == 1
             assert results[0]["status"] == "error"
@@ -203,22 +237,25 @@ class TestProcessDocumentsParallel:
 
 # ── CLI main ──────────────────────────────────────────────────────────────
 
+
 class TestMainCli:
     def test_no_files_found(self, tmp_path, caplog):
         empty_dir = tmp_path / "empty"
         empty_dir.mkdir()
         runner = CliRunner()
         with caplog.at_level("WARNING", logger="batch_ingest"):
-            result = runner.invoke(main, [str(empty_dir)])
+            runner.invoke(main, [str(empty_dir)])
         assert "No document files found" in caplog.text
 
     def test_sequential_processing(self, tmp_path, caplog):
         pdf = tmp_path / "test.pdf"
         pdf.write_text("fake pdf")
         runner = CliRunner()
-        with caplog.at_level("INFO", logger="batch_ingest"):
-            with patch("batch_ingest.ingest_document", return_value="doc-123"):
-                result = runner.invoke(main, [str(tmp_path)])
+        with (
+            caplog.at_level("INFO", logger="batch_ingest"),
+            patch("batch_ingest.ingest_document", return_value="doc-123"),
+        ):
+            runner.invoke(main, [str(tmp_path)])
         assert "Successful: 1" in caplog.text
 
     def test_parallel_processing(self, tmp_path, caplog):
@@ -229,9 +266,11 @@ class TestMainCli:
             {"file_path": str(tmp_path / "a.pdf"), "status": "success", "output": "OK"},
             {"file_path": str(tmp_path / "b.pdf"), "status": "success", "output": "OK"},
         ]
-        with caplog.at_level("INFO", logger="batch_ingest"):
-            with patch("batch_ingest.process_documents_parallel", return_value=mock_results):
-                result = runner.invoke(main, [str(tmp_path), "--parallel", "2"])
+        with (
+            caplog.at_level("INFO", logger="batch_ingest"),
+            patch("batch_ingest.process_documents_parallel", return_value=mock_results),
+        ):
+            runner.invoke(main, [str(tmp_path), "--parallel", "2"])
         assert "Successful: 2" in caplog.text
 
     def test_with_metadata_file(self, tmp_path):
@@ -250,7 +289,7 @@ class TestMainCli:
         output = tmp_path / "results.json"
         runner = CliRunner()
         with patch("batch_ingest.ingest_document", return_value="doc-123"):
-            result = runner.invoke(main, [str(tmp_path), "--output", str(output)])
+            runner.invoke(main, [str(tmp_path), "--output", str(output)])
             assert output.exists()
             data = json.loads(output.read_text())
             assert len(data) == 1
@@ -259,8 +298,10 @@ class TestMainCli:
         pdf = tmp_path / "test.pdf"
         pdf.write_text("fake pdf")
         runner = CliRunner()
-        with caplog.at_level("INFO", logger="batch_ingest"):
-            with patch("batch_ingest.ingest_document", side_effect=Exception("error")):
-                result = runner.invoke(main, [str(tmp_path)])
+        with (
+            caplog.at_level("INFO", logger="batch_ingest"),
+            patch("batch_ingest.ingest_document", side_effect=Exception("error")),
+        ):
+            result = runner.invoke(main, [str(tmp_path)])
         assert "Failed: 1" in caplog.text
         assert result.exit_code == 1

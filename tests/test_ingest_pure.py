@@ -1,15 +1,14 @@
 """Tests for pure functions in ingest.py."""
 
-import pytest
 from unittest.mock import patch
 
 from ingest import (
     count_tokens,
     detect_heading_patterns,
-    is_quality_heading,
-    merge_heading_detection,
     extract_entities_and_years,
     filter_appendices,
+    is_quality_heading,
+    merge_heading_detection,
     merge_heading_results,
     rank_headings_by_relevance,
 )
@@ -19,6 +18,7 @@ def _rank_fallback(query, headings, limit=10):
     """Exercise the simple string-matching fallback in rank_headings_by_relevance
     by making rapidfuzz un-importable."""
     import sys
+
     # Temporarily hide rapidfuzz
     saved = {}
     for mod_name in list(sys.modules):
@@ -27,6 +27,7 @@ def _rank_fallback(query, headings, limit=10):
     try:
         # Also block fresh imports
         import builtins
+
         real_import = builtins.__import__
 
         def patched_import(name, *args, **kwargs):
@@ -44,6 +45,7 @@ def _rank_fallback(query, headings, limit=10):
 
 
 # ── count_tokens ──────────────────────────────────────────────────────────
+
 
 class TestCountTokens:
     def test_empty_string(self):
@@ -67,11 +69,14 @@ class TestCountTokens:
 
     def test_longer_text_has_more_tokens(self):
         short = count_tokens("hello")
-        long = count_tokens("hello world this is a longer sentence with many more words")
+        long = count_tokens(
+            "hello world this is a longer sentence with many more words"
+        )
         assert long > short
 
 
 # ── detect_heading_patterns ───────────────────────────────────────────────
+
 
 class TestDetectHeadingPatterns:
     def test_chapter_uppercase(self):
@@ -171,6 +176,7 @@ class TestDetectHeadingPatterns:
 
 # ── is_quality_heading ────────────────────────────────────────────────────
 
+
 class TestIsQualityHeading:
     def test_too_short(self):
         assert is_quality_heading("Hi", 12, False) is False
@@ -231,7 +237,8 @@ class TestIsQualityHeading:
         assert is_quality_heading("12 34 56", 12, False) is False
 
     def test_short_bold_large_font_still_needs_length(self):
-        """Line 256: text < 5 chars but bold + large font — still fails (< 5 check on line 210)."""
+        """Line 256: text < 5 chars but bold + large font --
+        still fails (< 5 check on line 210)."""
         assert is_quality_heading("Go", 14, True) is False
 
     def test_length_exactly_5_passes_length_check(self):
@@ -259,6 +266,7 @@ class TestIsQualityHeading:
 
 # ── merge_heading_detection ───────────────────────────────────────────────
 
+
 class TestMergeHeadingDetection:
     def test_pages_without_headings_get_regex(self):
         pages = [{"page": 1, "text": "CHAPTER 1: Test Heading\nBody text."}]
@@ -268,53 +276,99 @@ class TestMergeHeadingDetection:
         assert "headings" in result[0]
 
     def test_pages_with_headings_merge_non_conflicting(self):
-        pages = [{
-            "page": 1,
-            "text": "CHAPTER 1: Existing Heading\nSome body text here.",
-            "headings": [
-                {"text": "Existing Heading", "line_number": 0, "level": 1,
-                 "detection_method": "font"}
-            ]
-        }]
+        pages = [
+            {
+                "page": 1,
+                "text": "CHAPTER 1: Existing Heading\nSome body text here.",
+                "headings": [
+                    {
+                        "text": "Existing Heading",
+                        "line_number": 0,
+                        "level": 1,
+                        "detection_method": "font",
+                    }
+                ],
+            }
+        ]
         result = merge_heading_detection(pages)
         # Should have at least the original heading
         assert len(result[0]["headings"]) >= 1
 
     def test_pdf_mode_filters_to_level_1_and_2(self):
-        pages = [{
-            "page": 1,
-            "text": "CHAPTER 1: Level One\nSome text.\n1.1.1 Level Three Item",
-            "headings": [
-                {"text": "Level One", "line_number": 0, "level": 1, "detection_method": "font"},
-                {"text": "Level Three Item", "line_number": 2, "level": 3, "detection_method": "font"},
-            ]
-        }]
+        pages = [
+            {
+                "page": 1,
+                "text": "CHAPTER 1: Level One\nSome text.\n1.1.1 Level Three Item",
+                "headings": [
+                    {
+                        "text": "Level One",
+                        "line_number": 0,
+                        "level": 1,
+                        "detection_method": "font",
+                    },
+                    {
+                        "text": "Level Three Item",
+                        "line_number": 2,
+                        "level": 3,
+                        "detection_method": "font",
+                    },
+                ],
+            }
+        ]
         result = merge_heading_detection(pages, is_pdf=True)
         levels = [h["level"] for h in result[0]["headings"]]
-        assert all(l in [1, 2] for l in levels)
+        assert all(level in [1, 2] for level in levels)
 
     def test_non_pdf_keeps_all_levels(self):
-        pages = [{
-            "page": 1,
-            "text": "CHAPTER 1: Level One\nSome text.\n1.1.1 Level Three Item",
-            "headings": [
-                {"text": "Level One", "line_number": 0, "level": 1, "detection_method": "font"},
-                {"text": "Level Three Item", "line_number": 2, "level": 3, "detection_method": "font"},
-            ]
-        }]
+        pages = [
+            {
+                "page": 1,
+                "text": "CHAPTER 1: Level One\nSome text.\n1.1.1 Level Three Item",
+                "headings": [
+                    {
+                        "text": "Level One",
+                        "line_number": 0,
+                        "level": 1,
+                        "detection_method": "font",
+                    },
+                    {
+                        "text": "Level Three Item",
+                        "line_number": 2,
+                        "level": 3,
+                        "detection_method": "font",
+                    },
+                ],
+            }
+        ]
         result = merge_heading_detection(pages, is_pdf=False)
         levels = [h["level"] for h in result[0]["headings"]]
         assert 3 in levels
 
     def test_headings_sorted_by_line_number(self):
-        pages = [{
-            "page": 1,
-            "text": "Second heading text.\nFirst heading text.\nCHAPTER 1: Third Heading",
-            "headings": [
-                {"text": "Second", "line_number": 5, "level": 1, "detection_method": "font"},
-                {"text": "First", "line_number": 1, "level": 1, "detection_method": "font"},
-            ]
-        }]
+        pages = [
+            {
+                "page": 1,
+                "text": (
+                    "Second heading text.\n"
+                    "First heading text.\n"
+                    "CHAPTER 1: Third Heading"
+                ),
+                "headings": [
+                    {
+                        "text": "Second",
+                        "line_number": 5,
+                        "level": 1,
+                        "detection_method": "font",
+                    },
+                    {
+                        "text": "First",
+                        "line_number": 1,
+                        "level": 1,
+                        "detection_method": "font",
+                    },
+                ],
+            }
+        ]
         result = merge_heading_detection(pages, is_pdf=True)
         line_nums = [h["line_number"] for h in result[0]["headings"]]
         assert line_nums == sorted(line_nums)
@@ -328,34 +382,37 @@ class TestMergeHeadingDetection:
 
 # ── extract_entities_and_years ────────────────────────────────────────────
 
+
 class TestExtractEntitiesAndYears:
     def test_extracts_four_digit_year(self):
-        entities, years = extract_entities_and_years("The war ended in 1865.")
+        _, years = extract_entities_and_years("The war ended in 1865.")
         assert 1865 in years
 
     def test_extracts_multiple_years(self):
-        entities, years = extract_entities_and_years("From 1776 to 1783, the revolution raged.")
+        _, years = extract_entities_and_years(
+            "From 1776 to 1783, the revolution raged."
+        )
         assert 1776 in years
         assert 1783 in years
 
     def test_extracts_decade_pattern(self):
-        entities, years = extract_entities_and_years("During the 1940s, many things changed.")
+        _, years = extract_entities_and_years("During the 1940s, many things changed.")
         assert 1940 in years
 
     def test_out_of_range_year_rejected(self):
-        entities, years = extract_entities_and_years("In the year 1399 nothing happened.")
+        _, years = extract_entities_and_years("In the year 1399 nothing happened.")
         assert 1399 not in years
 
     def test_future_year_rejected(self):
-        entities, years = extract_entities_and_years("In 2100 the future arrives.")
+        _, years = extract_entities_and_years("In 2100 the future arrives.")
         assert 2100 not in years
 
     def test_no_years_returns_empty(self):
-        entities, years = extract_entities_and_years("No dates mentioned here at all.")
+        _, years = extract_entities_and_years("No dates mentioned here at all.")
         assert years == [], f"Expected empty list but got {years}"
 
     def test_entities_have_correct_keys(self):
-        entities, years = extract_entities_and_years(
+        entities, _ = extract_entities_and_years(
             "George Washington visited Philadelphia in 1789."
         )
         for entity in entities:
@@ -364,7 +421,7 @@ class TestExtractEntitiesAndYears:
             assert "norm_entity" in entity
 
     def test_norm_entity_is_lowercase(self):
-        entities, years = extract_entities_and_years(
+        entities, _ = extract_entities_and_years(
             "George Washington was the first president."
         )
         for entity in entities:
@@ -372,22 +429,21 @@ class TestExtractEntitiesAndYears:
 
     def test_nlp_none_returns_empty_entities(self):
         with patch("entities._get_nlp", return_value=None):
-            entities, years = extract_entities_and_years(
-                "George Washington in 1776."
-            )
+            entities, years = extract_entities_and_years("George Washington in 1776.")
             assert entities == []
             assert 1776 in years  # years still extracted via regex
 
     def test_boundary_year_1400(self):
-        entities, years = extract_entities_and_years("In 1400 the era began.")
+        _, years = extract_entities_and_years("In 1400 the era began.")
         assert 1400 in years
 
     def test_boundary_year_2099(self):
-        entities, years = extract_entities_and_years("By 2099 we will know.")
+        _, years = extract_entities_and_years("By 2099 we will know.")
         assert 2099 in years
 
 
 # ── filter_appendices ─────────────────────────────────────────────────────
+
 
 class TestFilterAppendices:
     def test_matches_appendix_uppercase(self):
@@ -429,6 +485,7 @@ class TestFilterAppendices:
 
 
 # ── merge_heading_results ─────────────────────────────────────────────────
+
 
 class TestMergeHeadingResults:
     def test_deduplicates_same_page_same_title(self):
@@ -500,6 +557,7 @@ class TestMergeHeadingResults:
 
 # ── rank_headings_by_relevance ────────────────────────────────────────────
 
+
 class TestRankHeadingsByRelevance:
     def test_exact_match_high_score(self):
         headings = [
@@ -540,9 +598,12 @@ class TestRankHeadingsByRelevance:
     def test_fallback_exact_match(self):
         """Fallback path line 1026-1027: exact match gives score 1.0."""
         headings = [{"title": "Civil War", "page": 0}]
-        with patch.dict("sys.modules", {"rapidfuzz": None, "rapidfuzz.process": None, "rapidfuzz.fuzz": None}):
+        with patch.dict(
+            "sys.modules",
+            {"rapidfuzz": None, "rapidfuzz.process": None, "rapidfuzz.fuzz": None},
+        ):
             # Need to force ImportError inside the function
-            import importlib
+
             result = _rank_fallback("Civil War", headings)
             assert result[0]["relevance_score"] == 1.0
 

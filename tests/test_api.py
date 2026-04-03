@@ -2,8 +2,8 @@
 
 import io
 import json
-import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, patch
+
 from tests.conftest import make_mock_db_connection
 
 
@@ -15,15 +15,27 @@ def _make_search_result(**overrides):
             "query_type": "factoid",
             "person": None,
             "entities": {
-                "persons": [], "places": [], "events": [], "dates": [],
-                "families": [], "companies": [], "industries": [], "settlement_terms": [],
+                "persons": [],
+                "places": [],
+                "events": [],
+                "dates": [],
+                "families": [],
+                "companies": [],
+                "industries": [],
+                "settlement_terms": [],
             },
             "expansions": ["test query"],
         },
         "answer": "The answer is yes.",
         "results": [
-            {"id": "p1", "text": "Short text.", "page": 5, "title": "Doc A",
-             "headings_path": ["Chapter 1"], "score": 0.95}
+            {
+                "id": "p1",
+                "text": "Short text.",
+                "page": 5,
+                "title": "Doc A",
+                "headings_path": ["Chapter 1"],
+                "score": 0.95,
+            }
         ],
     }
     defaults.update(overrides)
@@ -32,10 +44,13 @@ def _make_search_result(**overrides):
 
 # ── GET /api/health ───────────────────────────────────────────────────────
 
+
 class TestHealthEndpoint:
     def test_returns_healthy(self):
-        from api.main import app
         from fastapi.testclient import TestClient
+
+        from api.main import app
+
         client = TestClient(app)
         response = client.get("/api/health")
         assert response.status_code == 200
@@ -44,10 +59,13 @@ class TestHealthEndpoint:
 
 # ── POST /api/search ──────────────────────────────────────────────────────
 
+
 class TestSearchEndpoint:
     def test_successful_search(self):
-        from api.main import app
         from fastapi.testclient import TestClient
+
+        from api.main import app
+
         mock_result = _make_search_result()
         with patch("api.main.search_codex", return_value=mock_result):
             client = TestClient(app)
@@ -60,8 +78,10 @@ class TestSearchEndpoint:
             assert data["results"][0]["passage_id"] == "p1"
 
     def test_search_returns_full_text_and_headings(self):
-        from api.main import app
         from fastapi.testclient import TestClient
+
+        from api.main import app
+
         mock_result = _make_search_result()
         with patch("api.main.search_codex", return_value=mock_result):
             client = TestClient(app)
@@ -71,11 +91,16 @@ class TestSearchEndpoint:
             assert result["headings_path"] == ["Chapter 1"]
 
     def test_search_returns_query_analysis(self):
-        from api.main import app
         from fastapi.testclient import TestClient
+
+        from api.main import app
+
         mock_result = _make_search_result()
         mock_result["query_analysis"]["person"] = "John Smith"
-        mock_result["query_analysis"]["expansions"] = ["who is John Smith", "John Smith history"]
+        mock_result["query_analysis"]["expansions"] = [
+            "who is John Smith",
+            "John Smith history",
+        ]
         with patch("api.main.search_codex", return_value=mock_result):
             client = TestClient(app)
             response = client.post("/api/search", json={"query": "Who is John Smith?"})
@@ -86,12 +111,22 @@ class TestSearchEndpoint:
             assert "who is John Smith" in qa["expansions"]
 
     def test_snippet_truncation(self):
-        from api.main import app
         from fastapi.testclient import TestClient
+
+        from api.main import app
+
         long_text = "x" * 300
         mock_result = _make_search_result(
-            results=[{"id": "p1", "text": long_text, "page": 1, "title": "Doc",
-                      "headings_path": [], "score": 0.5}]
+            results=[
+                {
+                    "id": "p1",
+                    "text": long_text,
+                    "page": 1,
+                    "title": "Doc",
+                    "headings_path": [],
+                    "score": 0.5,
+                }
+            ]
         )
         with patch("api.main.search_codex", return_value=mock_result):
             client = TestClient(app)
@@ -102,8 +137,10 @@ class TestSearchEndpoint:
             assert result["text"] == long_text  # full text preserved
 
     def test_search_error_returns_500(self):
-        from api.main import app
         from fastapi.testclient import TestClient
+
+        from api.main import app
+
         with patch("api.main.search_codex", side_effect=Exception("Search failed")):
             client = TestClient(app)
             response = client.post("/api/search", json={"query": "test"})
@@ -111,14 +148,22 @@ class TestSearchEndpoint:
 
     def test_search_with_missing_query_analysis(self):
         """Backwards compat: search_codex result without query_analysis key."""
-        from api.main import app
         from fastapi.testclient import TestClient
+
+        from api.main import app
+
         mock_result = {
             "query_type": "general",
             "answer": "Answer.",
             "results": [
-                {"id": "p1", "text": "Text.", "page": 1, "title": "Doc",
-                 "headings_path": [], "score": 0.5}
+                {
+                    "id": "p1",
+                    "text": "Text.",
+                    "page": 1,
+                    "title": "Doc",
+                    "headings_path": [],
+                    "score": 0.5,
+                }
             ],
         }
         with patch("api.main.search_codex", return_value=mock_result):
@@ -130,30 +175,50 @@ class TestSearchEndpoint:
 
 # ── POST /api/search/stream ──────────────────────────────────────────────
 
+
 class TestSearchStreamEndpoint:
     def test_stream_returns_sse_events(self):
-        from api.main import app
         from fastapi.testclient import TestClient
+
+        from api.main import app
 
         mock_analysis = {
             "query_type": "general",
             "person": None,
-            "entities": {"persons": [], "places": [], "events": [], "dates": [],
-                         "families": [], "companies": [], "industries": [], "settlement_terms": []},
+            "entities": {
+                "persons": [],
+                "places": [],
+                "events": [],
+                "dates": [],
+                "families": [],
+                "companies": [],
+                "industries": [],
+                "settlement_terms": [],
+            },
             "expansions": ["test"],
         }
         mock_details = [
-            {"id": "p1", "text": "Passage text.", "page": 1, "title": "Doc A",
-             "headings_path": [], "score": 0.9}
+            {
+                "id": "p1",
+                "text": "Passage text.",
+                "page": 1,
+                "title": "Doc A",
+                "headings_path": [],
+                "score": 0.9,
+            }
         ]
 
-        with patch("api.main.analyze_query", return_value=mock_analysis), \
-             patch("api.main.hybrid_search", return_value=[("p1", 0.9)]), \
-             patch("api.main.rerank_candidates", return_value=[("p1", 0.9)]), \
-             patch("api.main.get_passage_details", return_value=mock_details), \
-             patch("api.main.stream_answer_with_llm", return_value=iter(["Hello", " world"])), \
-             patch("api.main.db_connection", make_mock_db_connection(MagicMock())):
-
+        with (
+            patch("api.main.analyze_query", return_value=mock_analysis),
+            patch("api.main.hybrid_search", return_value=[("p1", 0.9)]),
+            patch("api.main.rerank_candidates", return_value=[("p1", 0.9)]),
+            patch("api.main.get_passage_details", return_value=mock_details),
+            patch(
+                "api.main.stream_answer_with_llm",
+                return_value=iter(["Hello", " world"]),
+            ),
+            patch("api.main.db_connection", make_mock_db_connection(MagicMock())),
+        ):
             client = TestClient(app)
             response = client.post(
                 "/api/search/stream",
@@ -171,19 +236,30 @@ class TestSearchStreamEndpoint:
             assert "done" in event_types
 
     def test_stream_no_candidates(self):
-        from api.main import app
         from fastapi.testclient import TestClient
 
+        from api.main import app
+
         mock_analysis = {
-            "query_type": "general", "person": None,
-            "entities": {"persons": [], "places": [], "events": [], "dates": [],
-                         "families": [], "companies": [], "industries": [], "settlement_terms": []},
+            "query_type": "general",
+            "person": None,
+            "entities": {
+                "persons": [],
+                "places": [],
+                "events": [],
+                "dates": [],
+                "families": [],
+                "companies": [],
+                "industries": [],
+                "settlement_terms": [],
+            },
             "expansions": [],
         }
 
-        with patch("api.main.analyze_query", return_value=mock_analysis), \
-             patch("api.main.hybrid_search", return_value=[]):
-
+        with (
+            patch("api.main.analyze_query", return_value=mock_analysis),
+            patch("api.main.hybrid_search", return_value=[]),
+        ):
             client = TestClient(app)
             response = client.post(
                 "/api/search/stream",
@@ -199,16 +275,25 @@ class TestSearchStreamEndpoint:
 
 # ── GET /api/documents ────────────────────────────────────────────────────
 
+
 class TestDocumentsEndpoint:
     def test_list_documents(self):
-        from api.main import app
         from fastapi.testclient import TestClient
+
+        from api.main import app
+
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
         mock_cursor.__exit__ = MagicMock(return_value=False)
         mock_cursor.fetchall.return_value = [
-            {"id": "d1", "title": "Doc A", "authors": None, "pub_year": 2000, "source_path": "/path"},
+            {
+                "id": "d1",
+                "title": "Doc A",
+                "authors": None,
+                "pub_year": 2000,
+                "source_path": "/path",
+            },
         ]
         mock_conn.cursor.return_value = mock_cursor
 
@@ -219,8 +304,10 @@ class TestDocumentsEndpoint:
             assert len(response.json()) == 1
 
     def test_documents_error_returns_500(self):
-        from api.main import app
         from fastapi.testclient import TestClient
+
+        from api.main import app
+
         with patch("api.main.db_connection", side_effect=Exception("DB down")):
             client = TestClient(app)
             response = client.get("/api/documents")
@@ -229,19 +316,30 @@ class TestDocumentsEndpoint:
 
 # ── GET /api/documents/{document_id} ─────────────────────────────────────
 
+
 class TestDocumentDetailEndpoint:
     def test_returns_document_stats(self):
-        from api.main import app
         from fastapi.testclient import TestClient
+
+        from api.main import app
+
         mock_stats = {
-            "document": {"id": "d1", "title": "Doc A", "authors": None, "pub_year": 2000, "source_path": "/path"},
+            "document": {
+                "id": "d1",
+                "title": "Doc A",
+                "authors": None,
+                "pub_year": 2000,
+                "source_path": "/path",
+            },
             "passages": {"total_passages": 50, "embedded_passages": 45},
             "entities": {"entity_count": 120},
             "years": {"year_count": 15},
             "pages": {"min_page": 1, "max_page": 80},
         }
-        with patch("api.main.db_connection", make_mock_db_connection(MagicMock())), \
-             patch("api.main.get_document_stats", return_value=mock_stats):
+        with (
+            patch("api.main.db_connection", make_mock_db_connection(MagicMock())),
+            patch("api.main.get_document_stats", return_value=mock_stats),
+        ):
             client = TestClient(app)
             response = client.get("/api/documents/d1")
             assert response.status_code == 200
@@ -251,17 +349,23 @@ class TestDocumentDetailEndpoint:
             assert data["pages"]["max_page"] == 80
 
     def test_document_not_found(self):
-        from api.main import app
         from fastapi.testclient import TestClient
-        with patch("api.main.db_connection", make_mock_db_connection(MagicMock())), \
-             patch("api.main.get_document_stats", return_value=None):
+
+        from api.main import app
+
+        with (
+            patch("api.main.db_connection", make_mock_db_connection(MagicMock())),
+            patch("api.main.get_document_stats", return_value=None),
+        ):
             client = TestClient(app)
             response = client.get("/api/documents/nonexistent")
             assert response.status_code == 404
 
     def test_document_detail_db_error(self):
-        from api.main import app
         from fastapi.testclient import TestClient
+
+        from api.main import app
+
         with patch("api.main.db_connection", side_effect=Exception("DB error")):
             client = TestClient(app)
             response = client.get("/api/documents/d1")
@@ -270,10 +374,13 @@ class TestDocumentDetailEndpoint:
 
 # ── DELETE /api/documents/{document_id} ──────────────────────────────────
 
+
 class TestDeleteDocumentEndpoint:
     def test_deletes_document_successfully(self):
-        from api.main import app
         from fastapi.testclient import TestClient
+
+        from api.main import app
+
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
@@ -287,18 +394,24 @@ class TestDeleteDocumentEndpoint:
         mock_meili_client = MagicMock()
         mock_meili_client.index.return_value = mock_meili_index
 
-        with patch("api.main.db_connection", make_mock_db_connection(mock_conn)), \
-             patch("api.main.get_meili_client", return_value=mock_meili_client):
+        with (
+            patch("api.main.db_connection", make_mock_db_connection(mock_conn)),
+            patch("api.main.get_meili_client", return_value=mock_meili_client),
+        ):
             client = TestClient(app)
-            response = client.delete("/api/documents/550e8400-e29b-41d4-a716-446655440000")
+            response = client.delete(
+                "/api/documents/550e8400-e29b-41d4-a716-446655440000"
+            )
             assert response.status_code == 200
             data = response.json()
             assert data["status"] == "deleted"
             mock_meili_index.delete_documents.assert_called_once_with(["p1", "p2"])
 
     def test_delete_not_found(self):
-        from api.main import app
         from fastapi.testclient import TestClient
+
+        from api.main import app
+
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
@@ -307,23 +420,31 @@ class TestDeleteDocumentEndpoint:
         mock_cursor.fetchall.return_value = []
         mock_cursor.fetchone.return_value = None
 
-        with patch("api.main.db_connection", make_mock_db_connection(mock_conn)), \
-             patch("api.main.get_meili_client", return_value=MagicMock()):
+        with (
+            patch("api.main.db_connection", make_mock_db_connection(mock_conn)),
+            patch("api.main.get_meili_client", return_value=MagicMock()),
+        ):
             client = TestClient(app)
-            response = client.delete("/api/documents/550e8400-e29b-41d4-a716-446655440000")
+            response = client.delete(
+                "/api/documents/550e8400-e29b-41d4-a716-446655440000"
+            )
             assert response.status_code == 404
 
     def test_delete_invalid_id(self):
-        from api.main import app
         from fastapi.testclient import TestClient
+
+        from api.main import app
+
         client = TestClient(app)
         response = client.delete("/api/documents/not-a-uuid")
         assert response.status_code == 400
         assert "Invalid document ID" in response.json()["detail"]
 
     def test_delete_succeeds_even_if_meili_fails(self):
-        from api.main import app
         from fastapi.testclient import TestClient
+
+        from api.main import app
+
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
@@ -333,21 +454,29 @@ class TestDeleteDocumentEndpoint:
         mock_cursor.fetchone.return_value = ("d1-uuid",)
 
         mock_meili_client = MagicMock()
-        mock_meili_client.index.return_value.delete_documents.side_effect = Exception("Meili down")
+        mock_meili_client.index.return_value.delete_documents.side_effect = Exception(
+            "Meili down"
+        )
 
-        with patch("api.main.db_connection", make_mock_db_connection(mock_conn)), \
-             patch("api.main.get_meili_client", return_value=mock_meili_client):
+        with (
+            patch("api.main.db_connection", make_mock_db_connection(mock_conn)),
+            patch("api.main.get_meili_client", return_value=mock_meili_client),
+        ):
             client = TestClient(app)
-            response = client.delete("/api/documents/550e8400-e29b-41d4-a716-446655440000")
+            response = client.delete(
+                "/api/documents/550e8400-e29b-41d4-a716-446655440000"
+            )
             assert response.status_code == 200
 
 
 # ── POST /api/documents/upload ───────────────────────────────────────────
 
+
 class TestUploadEndpoint:
     def test_upload_pdf_returns_202(self):
-        from api.main import app, _ingest_tasks
         from fastapi.testclient import TestClient
+
+        from api.main import _ingest_tasks, app
 
         _ingest_tasks.clear()
         client = TestClient(app)
@@ -364,8 +493,9 @@ class TestUploadEndpoint:
         assert data["task_id"]
 
     def test_upload_txt_accepted(self):
-        from api.main import app, _ingest_tasks
         from fastapi.testclient import TestClient
+
+        from api.main import _ingest_tasks, app
 
         _ingest_tasks.clear()
         client = TestClient(app)
@@ -377,8 +507,10 @@ class TestUploadEndpoint:
         assert response.status_code == 202
 
     def test_upload_rejects_unsupported_type(self):
-        from api.main import app
         from fastapi.testclient import TestClient
+
+        from api.main import app
+
         client = TestClient(app)
         response = client.post(
             "/api/documents/upload",
@@ -390,10 +522,12 @@ class TestUploadEndpoint:
 
 # ── GET /api/documents/upload/{task_id} ──────────────────────────────────
 
+
 class TestUploadStatusEndpoint:
     def test_returns_task_status(self):
-        from api.main import app, _ingest_tasks
         from fastapi.testclient import TestClient
+
+        from api.main import _ingest_tasks, app
 
         _ingest_tasks.clear()
         _ingest_tasks["task-123"] = {
@@ -410,8 +544,9 @@ class TestUploadStatusEndpoint:
         assert response.json()["status"] == "running"
 
     def test_task_not_found(self):
-        from api.main import app, _ingest_tasks
         from fastapi.testclient import TestClient
+
+        from api.main import _ingest_tasks, app
 
         _ingest_tasks.clear()
         client = TestClient(app)
@@ -421,20 +556,23 @@ class TestUploadStatusEndpoint:
 
 # ── GET /api/stats ────────────────────────────────────────────────────────
 
+
 class TestStatsEndpoint:
     def test_returns_stats(self):
-        from api.main import app
         from fastapi.testclient import TestClient
+
+        from api.main import app
+
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
         mock_cursor.__exit__ = MagicMock(return_value=False)
         mock_cursor.fetchone.side_effect = [
-            (10,),   # doc count
+            (10,),  # doc count
             (100,),  # passage count
-            (80,),   # embedded count
+            (80,),  # embedded count
             (500,),  # entity count
-            (50,),   # year count
+            (50,),  # year count
         ]
         mock_conn.cursor.return_value = mock_cursor
 
@@ -450,8 +588,10 @@ class TestStatsEndpoint:
             assert data["years"] == 50
 
     def test_zero_passages_coverage(self):
-        from api.main import app
         from fastapi.testclient import TestClient
+
+        from api.main import app
+
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
@@ -474,6 +614,7 @@ class TestStatsEndpoint:
 
 # ── Helpers ──────────────────────────────────────────────────────────────
 
+
 def _parse_sse(text: str) -> list:
     """Parse raw SSE text into a list of event dicts."""
     events = []
@@ -486,9 +627,9 @@ def _parse_sse(text: str) -> list:
                 current = {}
             continue
         if line.startswith("event:"):
-            current["event"] = line[len("event:"):].strip()
+            current["event"] = line[len("event:") :].strip()
         elif line.startswith("data:"):
-            raw = line[len("data:"):].strip()
+            raw = line[len("data:") :].strip()
             try:
                 current["data"] = json.loads(raw)
             except (json.JSONDecodeError, ValueError):

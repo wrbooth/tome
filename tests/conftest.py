@@ -1,8 +1,9 @@
 """Shared fixtures for Codex unit tests."""
 
-import pytest
 from contextlib import contextmanager
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
+
+import pytest
 
 
 def make_mock_db_connection(mock_conn):
@@ -10,9 +11,11 @@ def make_mock_db_connection(mock_conn):
 
     Useful for patching ``config.db_connection`` in tests.
     """
+
     @contextmanager
     def _db_connection():
         yield mock_conn
+
     return _db_connection
 
 
@@ -33,19 +36,38 @@ def sample_pages():
     return [
         {
             "page": 1,
-            "text": "CHAPTER 1: The Beginning\nThis is the first paragraph of content.\nThis is the second paragraph.",
+            "text": (
+                "CHAPTER 1: The Beginning\n"
+                "This is the first paragraph of content.\n"
+                "This is the second paragraph."
+            ),
             "headings": [
-                {"text": "The Beginning", "line_number": 0, "level": 1,
-                 "full_text": "CHAPTER 1: The Beginning", "detection_method": "regex"}
-            ]
+                {
+                    "text": "The Beginning",
+                    "line_number": 0,
+                    "level": 1,
+                    "full_text": "CHAPTER 1: The Beginning",
+                    "detection_method": "regex",
+                }
+            ],
         },
         {
             "page": 2,
-            "text": "More content on page two.\nAnother paragraph here.\nSection 1.1 Details\nDetails about section one point one.",
+            "text": (
+                "More content on page two.\n"
+                "Another paragraph here.\n"
+                "Section 1.1 Details\n"
+                "Details about section one point one."
+            ),
             "headings": [
-                {"text": "Details", "line_number": 2, "level": 2,
-                 "full_text": "Section 1.1 Details", "detection_method": "regex"}
-            ]
+                {
+                    "text": "Details",
+                    "line_number": 2,
+                    "level": 2,
+                    "full_text": "Section 1.1 Details",
+                    "detection_method": "regex",
+                }
+            ],
         },
     ]
 
@@ -57,7 +79,7 @@ def sample_pages_no_headings():
         {
             "page": 1,
             "text": "Just some plain text.\nWith a second paragraph.",
-            "headings": []
+            "headings": [],
         }
     ]
 
@@ -70,13 +92,13 @@ def sample_chunks():
             "page": 1,
             "text": "Doc Title | Chapter One | First chunk of text here.",
             "original_text": "First chunk of text here.",
-            "headings_path": ["Chapter One"]
+            "headings_path": ["Chapter One"],
         },
         {
             "page": 2,
             "text": "Doc Title | Chapter Two | Second chunk of text here.",
             "original_text": "Second chunk of text here.",
-            "headings_path": ["Chapter Two"]
+            "headings_path": ["Chapter Two"],
         },
     ]
 
@@ -91,7 +113,7 @@ def sample_search_results():
             "page": 10,
             "title": "History of America",
             "headings_path": ["Chapter 1", "Presidents"],
-            "score": 0.95
+            "score": 0.95,
         },
         {
             "id": "passage-2",
@@ -99,7 +121,7 @@ def sample_search_results():
             "page": 25,
             "title": "History of America",
             "headings_path": ["Chapter 3", "Revolution"],
-            "score": 0.82
+            "score": 0.82,
         },
     ]
 
@@ -112,7 +134,14 @@ def mock_openai_client():
     # Mock chat completions
     chat_response = MagicMock()
     chat_response.choices = [MagicMock()]
-    chat_response.choices[0].message.content = '{"query_type": "general", "person": "", "entities": {"persons": [], "places": [], "events": [], "dates": [], "families": [], "companies": [], "industries": [], "settlement_terms": []}, "expansions": ["test query"]}'
+    chat_response.choices[0].message.content = (
+        '{"query_type": "general", "person": "",'
+        ' "entities": {"persons": [], "places": [],'
+        ' "events": [], "dates": [], "families": [],'
+        ' "companies": [], "industries": [],'
+        ' "settlement_terms": []},'
+        ' "expansions": ["test query"]}'
+    )
     client.chat.completions.create.return_value = chat_response
 
     # Mock embeddings

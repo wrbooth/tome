@@ -1,17 +1,20 @@
 """Tests for documents.py."""
 
-import pytest
 from unittest.mock import MagicMock, patch
+
 from click.testing import CliRunner
-from tests.conftest import make_mock_db_connection
 
 from documents import (
-    get_document_stats, get_system_stats, list_documents, delete_document,
-    reindex_document_meilisearch, cli,
+    cli,
+    delete_document,
+    get_document_stats,
+    list_documents,
+    reindex_document_meilisearch,
 )
-
+from tests.conftest import make_mock_db_connection
 
 # ── get_document_stats ────────────────────────────────────────────────────
+
 
 class TestGetDocumentStats:
     def test_document_not_found(self, mock_db_conn):
@@ -24,7 +27,13 @@ class TestGetDocumentStats:
         cursor = mock_db_conn.cursor.return_value.__enter__.return_value
         cursor.fetchone.side_effect = [
             # doc query
-            {"id": "doc-1", "title": "Test Doc", "authors": ["Author"], "pub_year": 2000, "source_path": "/path"},
+            {
+                "id": "doc-1",
+                "title": "Test Doc",
+                "authors": ["Author"],
+                "pub_year": 2000,
+                "source_path": "/path",
+            },
             # passage stats
             {"total_passages": 10, "embedded_passages": 8},
             # entity stats
@@ -53,12 +62,21 @@ class TestGetDocumentStats:
 
 # ── list_documents ────────────────────────────────────────────────────────
 
+
 class TestListDocuments:
     def test_returns_list_of_dicts(self, mock_db_conn):
         cursor = mock_db_conn.cursor.return_value.__enter__.return_value
         cursor.fetchall.return_value = [
-            {"id": "d1", "title": "Doc A", "authors": None, "pub_year": 2000,
-             "passage_count": 5, "embedded_count": 3, "min_page": 1, "max_page": 10},
+            {
+                "id": "d1",
+                "title": "Doc A",
+                "authors": None,
+                "pub_year": 2000,
+                "passage_count": 5,
+                "embedded_count": 3,
+                "min_page": 1,
+                "max_page": 10,
+            },
         ]
         result = list_documents(mock_db_conn)
         assert isinstance(result, list)
@@ -73,6 +91,7 @@ class TestListDocuments:
 
 
 # ── delete_document ───────────────────────────────────────────────────────
+
 
 class TestDeleteDocument:
     def test_confirm_false_deletes_directly(self, mock_db_conn):
@@ -99,7 +118,7 @@ class TestDeleteDocument:
         cursor = mock_db_conn.cursor.return_value.__enter__.return_value
         cursor.fetchone.side_effect = [
             {"title": "Doc"},  # doc info
-            (5,),              # passage count (fetchone()[0])
+            (5,),  # passage count (fetchone()[0])
         ]
         with patch("documents.click.confirm", return_value=False):
             result = delete_document(mock_db_conn, "doc-1", confirm=True)
@@ -110,7 +129,7 @@ class TestDeleteDocument:
         # First two fetchone calls for confirm, then execute calls for delete
         cursor.fetchone.side_effect = [
             {"title": "Doc"},  # doc info
-            (5,),              # passage count
+            (5,),  # passage count
         ]
         cursor.rowcount = 1
         with patch("documents.click.confirm", return_value=True):
@@ -119,6 +138,7 @@ class TestDeleteDocument:
 
 
 # ── reindex_document_meilisearch ──────────────────────────────────────────
+
 
 class TestReindexDocumentMeilisearch:
     def test_no_passages_returns_false(self, mock_db_conn):
@@ -130,11 +150,18 @@ class TestReindexDocumentMeilisearch:
     def test_successful_reindex(self, mock_db_conn, mock_meili_client):
         cursor = mock_db_conn.cursor.return_value.__enter__.return_value
         cursor.fetchall.return_value = [
-            {"id": "p1", "text": "Test text from 1865.", "page": 1,
-             "headings_path": ["Chapter 1"], "title": "Doc"},
+            {
+                "id": "p1",
+                "text": "Test text from 1865.",
+                "page": 1,
+                "headings_path": ["Chapter 1"],
+                "title": "Doc",
+            },
         ]
-        with patch("documents.get_meili_client", return_value=mock_meili_client), \
-             patch("ingest.extract_entities_and_years", return_value=([], [1865])):
+        with (
+            patch("documents.get_meili_client", return_value=mock_meili_client),
+            patch("ingest.extract_entities_and_years", return_value=([], [1865])),
+        ):
             result = reindex_document_meilisearch(mock_db_conn, "doc-1")
             assert result is True
             mock_meili_client.index("passages").add_documents.assert_called_once()
@@ -142,15 +169,26 @@ class TestReindexDocumentMeilisearch:
     def test_meilisearch_error_returns_false(self, mock_db_conn):
         cursor = mock_db_conn.cursor.return_value.__enter__.return_value
         cursor.fetchall.return_value = [
-            {"id": "p1", "text": "Test.", "page": 1, "headings_path": [], "title": "Doc"},
+            {
+                "id": "p1",
+                "text": "Test.",
+                "page": 1,
+                "headings_path": [],
+                "title": "Doc",
+            },
         ]
-        with patch("documents.get_meili_client", side_effect=Exception("Connection error")), \
-             patch("ingest.extract_entities_and_years", return_value=([], [])):
+        with (
+            patch(
+                "documents.get_meili_client", side_effect=Exception("Connection error")
+            ),
+            patch("ingest.extract_entities_and_years", return_value=([], [])),
+        ):
             result = reindex_document_meilisearch(mock_db_conn, "doc-1")
             assert result is False
 
 
 # ── CLI: list command ─────────────────────────────────────────────────────
+
 
 class TestListCliCommand:
     def _mock_conn_with_docs(self, docs):
@@ -163,8 +201,18 @@ class TestListCliCommand:
         return mock_conn
 
     def test_list_json_format(self):
-        docs = [{"id": "d1", "title": "Doc A", "authors": None, "pub_year": 2000,
-                 "passage_count": 5, "embedded_count": 3, "min_page": 1, "max_page": 10}]
+        docs = [
+            {
+                "id": "d1",
+                "title": "Doc A",
+                "authors": None,
+                "pub_year": 2000,
+                "passage_count": 5,
+                "embedded_count": 3,
+                "min_page": 1,
+                "max_page": 10,
+            }
+        ]
         mock_conn = self._mock_conn_with_docs(docs)
         runner = CliRunner()
         with patch("documents.db_connection", make_mock_db_connection(mock_conn)):
@@ -173,9 +221,18 @@ class TestListCliCommand:
             assert "Doc A" in result.output
 
     def test_list_table_format(self):
-        docs = [{"id": "d1234567-abcd-efgh-ijkl-mnopqrstuvwx", "title": "Doc A",
-                 "authors": ["Author X"], "pub_year": 2000,
-                 "passage_count": 5, "embedded_count": 3, "min_page": 1, "max_page": 10}]
+        docs = [
+            {
+                "id": "d1234567-abcd-efgh-ijkl-mnopqrstuvwx",
+                "title": "Doc A",
+                "authors": ["Author X"],
+                "pub_year": 2000,
+                "passage_count": 5,
+                "embedded_count": 3,
+                "min_page": 1,
+                "max_page": 10,
+            }
+        ]
         mock_conn = self._mock_conn_with_docs(docs)
         runner = CliRunner()
         with patch("documents.db_connection", make_mock_db_connection(mock_conn)):
@@ -199,6 +256,7 @@ class TestListCliCommand:
 
 # ── CLI: info command ─────────────────────────────────────────────────────
 
+
 class TestInfoCliCommand:
     def test_info_json(self):
         mock_conn = MagicMock()
@@ -206,7 +264,13 @@ class TestInfoCliCommand:
         cursor.__enter__ = MagicMock(return_value=cursor)
         cursor.__exit__ = MagicMock(return_value=False)
         cursor.fetchone.side_effect = [
-            {"id": "d1", "title": "Doc", "authors": ["A"], "pub_year": 2000, "source_path": "/path"},
+            {
+                "id": "d1",
+                "title": "Doc",
+                "authors": ["A"],
+                "pub_year": 2000,
+                "source_path": "/path",
+            },
             {"total_passages": 10, "embedded_passages": 8},
             {"entity_count": 50},
             {"year_count": 15},
@@ -225,7 +289,13 @@ class TestInfoCliCommand:
         cursor.__enter__ = MagicMock(return_value=cursor)
         cursor.__exit__ = MagicMock(return_value=False)
         cursor.fetchone.side_effect = [
-            {"id": "d1", "title": "Doc Title", "authors": ["Author A"], "pub_year": 2000, "source_path": "/path"},
+            {
+                "id": "d1",
+                "title": "Doc Title",
+                "authors": ["Author A"],
+                "pub_year": 2000,
+                "source_path": "/path",
+            },
             {"total_passages": 10, "embedded_passages": 8},
             {"entity_count": 50},
             {"year_count": 15},
@@ -253,6 +323,7 @@ class TestInfoCliCommand:
 
 
 # ── CLI: delete command ───────────────────────────────────────────────────
+
 
 class TestDeleteCliCommand:
     def test_delete_with_force(self):
@@ -282,25 +353,31 @@ class TestDeleteCliCommand:
 
 # ── CLI: reindex command ──────────────────────────────────────────────────
 
+
 class TestReindexCliCommand:
     def test_reindex_success(self):
         mock_conn = MagicMock()
         runner = CliRunner()
-        with patch("documents.db_connection", make_mock_db_connection(mock_conn)), \
-             patch("documents.reindex_document_meilisearch", return_value=True):
+        with (
+            patch("documents.db_connection", make_mock_db_connection(mock_conn)),
+            patch("documents.reindex_document_meilisearch", return_value=True),
+        ):
             result = runner.invoke(cli, ["reindex", "doc-1"])
             assert result.exit_code == 0
 
     def test_reindex_failure(self):
         mock_conn = MagicMock()
         runner = CliRunner()
-        with patch("documents.db_connection", make_mock_db_connection(mock_conn)), \
-             patch("documents.reindex_document_meilisearch", return_value=False):
+        with (
+            patch("documents.db_connection", make_mock_db_connection(mock_conn)),
+            patch("documents.reindex_document_meilisearch", return_value=False),
+        ):
             result = runner.invoke(cli, ["reindex", "doc-1"])
             assert result.exit_code == 1
 
 
 # ── CLI: stats command ────────────────────────────────────────────────────
+
 
 class TestStatsCliCommand:
     def test_stats_output(self):
@@ -309,11 +386,11 @@ class TestStatsCliCommand:
         cursor.__enter__ = MagicMock(return_value=cursor)
         cursor.__exit__ = MagicMock(return_value=False)
         cursor.fetchone.side_effect = [
-            (10,),   # documents
+            (10,),  # documents
             (100,),  # passages
-            (80,),   # embedded
+            (80,),  # embedded
             (500,),  # entities
-            (50,),   # years
+            (50,),  # years
         ]
         mock_conn.cursor.return_value = cursor
         runner = CliRunner()

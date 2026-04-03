@@ -1,14 +1,13 @@
 """Tests for search.py."""
 
-import pytest
 import json
 from unittest.mock import MagicMock, patch
-from tests.conftest import make_mock_db_connection
 
 from search import format_results
-
+from tests.conftest import make_mock_db_connection
 
 # ── format_results ────────────────────────────────────────────────────────
+
 
 class TestFormatResults:
     def test_empty_results(self):
@@ -59,9 +58,11 @@ class TestFormatResults:
 
 # ── analyze_query ─────────────────────────────────────────────────────────
 
+
 class TestAnalyzeQuery:
     def test_successful_analysis(self, mock_openai_client):
         from search import analyze_query
+
         with patch("search.get_openai_client", return_value=mock_openai_client):
             result = analyze_query("Who founded Cambridge?")
             assert "query_type" in result
@@ -69,6 +70,7 @@ class TestAnalyzeQuery:
 
     def test_api_error_returns_defaults(self):
         from search import analyze_query
+
         with patch("search.get_openai_client", side_effect=Exception("API down")):
             result = analyze_query("test query")
             assert result["query_type"] == "general"
@@ -77,34 +79,56 @@ class TestAnalyzeQuery:
 
     def test_person_normalization_empty_string(self, mock_openai_client):
         from search import analyze_query
+
         # Set person to empty string in response
-        response_data = json.loads(mock_openai_client.chat.completions.create.return_value.choices[0].message.content)
+        response_data = json.loads(
+            mock_openai_client.chat.completions.create.return_value.choices[
+                0
+            ].message.content
+        )
         response_data["person"] = ""
-        mock_openai_client.chat.completions.create.return_value.choices[0].message.content = json.dumps(response_data)
+        mock_openai_client.chat.completions.create.return_value.choices[
+            0
+        ].message.content = json.dumps(response_data)
         with patch("search.get_openai_client", return_value=mock_openai_client):
             result = analyze_query("What happened?")
             assert result["person"] is None
 
     def test_person_normalization_none_string(self, mock_openai_client):
         from search import analyze_query
-        response_data = json.loads(mock_openai_client.chat.completions.create.return_value.choices[0].message.content)
+
+        response_data = json.loads(
+            mock_openai_client.chat.completions.create.return_value.choices[
+                0
+            ].message.content
+        )
         response_data["person"] = "none"
-        mock_openai_client.chat.completions.create.return_value.choices[0].message.content = json.dumps(response_data)
+        mock_openai_client.chat.completions.create.return_value.choices[
+            0
+        ].message.content = json.dumps(response_data)
         with patch("search.get_openai_client", return_value=mock_openai_client):
             result = analyze_query("What?")
             assert result["person"] is None
 
     def test_original_query_prepended_to_expansions(self, mock_openai_client):
         from search import analyze_query
+
         with patch("search.get_openai_client", return_value=mock_openai_client):
             result = analyze_query("Who was George Washington?")
             assert result["expansions"][0] == "Who was George Washington?"
 
     def test_expansions_limited_to_15(self, mock_openai_client):
         from search import analyze_query
-        response_data = json.loads(mock_openai_client.chat.completions.create.return_value.choices[0].message.content)
+
+        response_data = json.loads(
+            mock_openai_client.chat.completions.create.return_value.choices[
+                0
+            ].message.content
+        )
         response_data["expansions"] = [f"term{i}" for i in range(20)]
-        mock_openai_client.chat.completions.create.return_value.choices[0].message.content = json.dumps(response_data)
+        mock_openai_client.chat.completions.create.return_value.choices[
+            0
+        ].message.content = json.dumps(response_data)
         with patch("search.get_openai_client", return_value=mock_openai_client):
             result = analyze_query("test")
             assert len(result["expansions"]) <= 15
@@ -112,9 +136,11 @@ class TestAnalyzeQuery:
 
 # ── hybrid_search ─────────────────────────────────────────────────────────
 
+
 class TestHybridSearch:
     def test_returns_id_score_tuples(self, mock_meili_client):
         from search import hybrid_search
+
         with patch("search.get_meili_client", return_value=mock_meili_client):
             results = hybrid_search("test query")
             assert len(results) == 2
@@ -122,32 +148,45 @@ class TestHybridSearch:
 
     def test_with_document_id_filter(self, mock_meili_client):
         from search import hybrid_search
+
         with patch("search.get_meili_client", return_value=mock_meili_client):
             test_uuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
             hybrid_search("test", document_id=test_uuid)
             mock_meili_client.index("passages").search.assert_called()
             call_args = mock_meili_client.index("passages").search.call_args
-            search_params = call_args[0][1] if len(call_args[0]) > 1 else call_args[1].get("opt_params", {})
+            search_params = (
+                call_args[0][1]
+                if len(call_args[0]) > 1
+                else call_args[1].get("opt_params", {})
+            )
             assert "filter" in search_params, "Expected 'filter' key in search params"
-            assert test_uuid in search_params["filter"], "Expected document_id in filter string"
+            assert test_uuid in search_params["filter"], (
+                "Expected document_id in filter string"
+            )
 
     def test_error_returns_empty_list(self):
         from search import hybrid_search
-        with patch("search.get_meili_client", side_effect=Exception("Connection refused")):
+
+        with patch(
+            "search.get_meili_client", side_effect=Exception("Connection refused")
+        ):
             results = hybrid_search("test")
             assert results == []
 
 
 # ── rerank_candidates ─────────────────────────────────────────────────────
 
+
 class TestRerankCandidates:
     def test_empty_candidates_returns_empty(self, mock_db_conn):
         from search import rerank_candidates
+
         result = rerank_candidates([], "query", mock_db_conn)
         assert result == []
 
     def test_reranks_and_returns_top_k(self, mock_db_conn):
         from search import rerank_candidates
+
         mock_cursor = mock_db_conn.cursor.return_value.__enter__.return_value
         mock_cursor.fetchall.return_value = [
             {"id": "p1", "text": "First passage."},
@@ -166,18 +205,33 @@ class TestRerankCandidates:
 
 # ── get_passage_details ───────────────────────────────────────────────────
 
+
 class TestGetPassageDetails:
     def test_empty_list(self, mock_db_conn):
         from search import get_passage_details
+
         result = get_passage_details(mock_db_conn, [])
         assert result == []
 
     def test_preserves_order(self, mock_db_conn):
         from search import get_passage_details
+
         mock_cursor = mock_db_conn.cursor.return_value.__enter__.return_value
         mock_cursor.fetchall.return_value = [
-            {"id": "p2", "text": "Second", "page": 2, "title": "Doc", "headings_path": []},
-            {"id": "p1", "text": "First", "page": 1, "title": "Doc", "headings_path": []},
+            {
+                "id": "p2",
+                "text": "Second",
+                "page": 2,
+                "title": "Doc",
+                "headings_path": [],
+            },
+            {
+                "id": "p1",
+                "text": "First",
+                "page": 1,
+                "title": "Doc",
+                "headings_path": [],
+            },
         ]
         result = get_passage_details(mock_db_conn, ["p1", "p2"])
         assert result[0]["id"] == "p1"
@@ -186,25 +240,47 @@ class TestGetPassageDetails:
 
 # ── search_codex ──────────────────────────────────────────────────────────
 
+
 class TestSearchCodex:
     def test_no_candidates_returns_empty(self):
         from search import search_codex
-        with patch("search.analyze_query", return_value={"query_type": "general", "expansions": ["q"]}), \
-             patch("search.hybrid_search", return_value=[]):
+
+        with (
+            patch(
+                "search.analyze_query",
+                return_value={"query_type": "general", "expansions": ["q"]},
+            ),
+            patch("search.hybrid_search", return_value=[]),
+        ):
             result = search_codex("test query")
             assert result["results"] == []
             assert "No candidates" in result["answer"]
 
     def test_full_pipeline(self, mock_db_conn):
         from search import search_codex
-        with patch("search.analyze_query", return_value={"query_type": "factoid", "expansions": ["q"]}), \
-             patch("search.hybrid_search", return_value=[("p1", 0.9)]), \
-             patch("search.db_connection", make_mock_db_connection(mock_db_conn)), \
-             patch("search.rerank_candidates", return_value=[("p1", 0.95)]), \
-             patch("search.get_passage_details", return_value=[
-                 {"id": "p1", "text": "Answer text.", "page": 1, "title": "Doc", "headings_path": []}
-             ]), \
-             patch("search.generate_answer", return_value="The answer."):
+
+        with (
+            patch(
+                "search.analyze_query",
+                return_value={"query_type": "factoid", "expansions": ["q"]},
+            ),
+            patch("search.hybrid_search", return_value=[("p1", 0.9)]),
+            patch("search.db_connection", make_mock_db_connection(mock_db_conn)),
+            patch("search.rerank_candidates", return_value=[("p1", 0.95)]),
+            patch(
+                "search.get_passage_details",
+                return_value=[
+                    {
+                        "id": "p1",
+                        "text": "Answer text.",
+                        "page": 1,
+                        "title": "Doc",
+                        "headings_path": [],
+                    }
+                ],
+            ),
+            patch("search.generate_answer", return_value="The answer."),
+        ):
             result = search_codex("What happened?")
             assert result["query_type"] == "factoid"
             assert result["answer"] == "The answer."

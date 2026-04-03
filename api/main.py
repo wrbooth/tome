@@ -4,33 +4,44 @@ Codex API Service
 FastAPI wrapper for search, document management, and streaming endpoints.
 """
 
-import sys
 import asyncio
 import logging
-import uuid
+import sys
 import tempfile
-from concurrent.futures import ThreadPoolExecutor
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+
+import anyio
+
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 logger = logging.getLogger(__name__)
 
-from fastapi import APIRouter, FastAPI, HTTPException, UploadFile, File, Form
+
+from fastapi import APIRouter, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
-from typing import List, Optional
 from psycopg2.extras import RealDictCursor
+from pydantic import BaseModel
 
-from config import db_connection, get_meili_client
-from documents import get_system_stats, get_document_stats
-from search import search_codex, analyze_query, hybrid_search, rerank_candidates, get_passage_details
 from answer_generator import stream_answer_with_llm
+from config import db_connection, get_meili_client
+from documents import get_document_stats, get_system_stats
 from models import (
-    PassageDetail, DocumentInfo, QueryAnalysisInfo, QueryEntities,
-    DocumentDetail, IngestTaskInfo,
+    DocumentDetail,
+    DocumentInfo,
+    IngestTaskInfo,
+    QueryAnalysisInfo,
+    QueryEntities,
+)
+from search import (
+    analyze_query,
+    get_passage_details,
+    hybrid_search,
+    rerank_candidates,
+    search_codex,
 )
 
 app = FastAPI(title="Codex Search API", version="2.0.0")
@@ -52,26 +63,30 @@ app.add_middleware(
 # Request / Response models
 # ---------------------------------------------------------------------------
 
+
 class SearchRequest(BaseModel):
     query: str
     k: int = 20
-    document_id: Optional[str] = None
+    document_id: str | None = None
+
 
 class SearchResult(BaseModel):
     """A single search result with full passage details."""
+
     passage_id: str
     title: str
     page: int
     snippet: str
     text: str
-    headings_path: List[str] = []
+    headings_path: list[str] = []
     score: float
+
 
 class SearchResponse(BaseModel):
     query_type: str
     query_analysis: QueryAnalysisInfo
     answer: str
-    results: List[SearchResult]
+    results: list[SearchResult]
 
 
 # ---------------------------------------------------------------------------
@@ -106,15 +121,17 @@ async def search(request: SearchRequest):
         for r in result["results"]:
             text = r["text"]
             snippet = text[:200] + "..." if len(text) > 200 else text
-            search_results.append(SearchResult(
-                passage_id=r["id"],
-                title=r["title"],
-                page=r["page"],
-                snippet=snippet,
-                text=text,
-                headings_path=r.get("headings_path") or [],
-                score=r["score"],
-            ))
+            search_results.append(
+                SearchResult(
+                    passage_id=r["id"],
+                    title=r["title"],
+                    page=r["page"],
+                    snippet=snippet,
+                    text=text,
+                    headings_path=r.get("headings_path") or [],
+                    score=r["score"],
+                )
+            )
 
         qa = result.get("query_analysis", {})
         query_analysis = QueryAnalysisInfo(
@@ -133,18 +150,19 @@ async def search(request: SearchRequest):
 
     except Exception as e:
         logger.exception("Search failed")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 def _sse_event(event: str, data) -> str:
     """Format a Server-Sent Event string."""
     import json as _json
+
     payload = _json.dumps(data)
     return f"event: {event}\ndata: {payload}\n\n"
 
 
 @router.post("/search/stream")
-async def search_stream(request: SearchRequest):
+async def search_stream(request: SearchRequest):  # noqa: C901
     """Stream search results + LLM answer via Server-Sent Events.
 
     Events emitted:
@@ -154,7 +172,7 @@ async def search_stream(request: SearchRequest):
       - error: on failure
     """
 
-    async def _generate():
+    async def _generate():  # noqa: C901
         try:
             qa = await asyncio.to_thread(analyze_query, request.query)
 
@@ -163,19 +181,26 @@ async def search_stream(request: SearchRequest):
             )
 
             if not candidates:
-                yield _sse_event("search_results", {
-                    "query_type": qa["query_type"], "query_analysis": qa, "results": [],
-                })
+                yield _sse_event(
+                    "search_results",
+                    {
+                        "query_type": qa["query_type"],
+                        "query_analysis": qa,
+                        "results": [],
+                    },
+                )
                 yield _sse_event("token", "No candidates found.")
                 yield _sse_event("done", {})
                 return
 
             def _rerank_and_detail():
                 with db_connection() as conn:
-                    reranked = rerank_candidates(candidates, request.query, conn, k=request.k)
+                    reranked = rerank_candidates(
+                        candidates, request.query, conn, k=request.k
+                    )
                     passage_ids = [pid for pid, _ in reranked]
                     details = get_passage_details(conn, passage_ids)
-                    score_map = {pid: score for pid, score in reranked}
+                    score_map = dict(reranked)
                     for d in details:
                         d["score"] = score_map.get(d["id"], 0.0)
                     return details
@@ -186,21 +211,26 @@ async def search_stream(request: SearchRequest):
             results_payload = []
             for r in passage_details:
                 text = r["text"]
-                results_payload.append({
-                    "passage_id": r["id"],
-                    "title": r["title"],
-                    "page": r["page"],
-                    "snippet": text[:200] + "..." if len(text) > 200 else text,
-                    "text": text,
-                    "headings_path": r.get("headings_path") or [],
-                    "score": r["score"],
-                })
+                results_payload.append(
+                    {
+                        "passage_id": r["id"],
+                        "title": r["title"],
+                        "page": r["page"],
+                        "snippet": text[:200] + "..." if len(text) > 200 else text,
+                        "text": text,
+                        "headings_path": r.get("headings_path") or [],
+                        "score": r["score"],
+                    }
+                )
 
-            yield _sse_event("search_results", {
-                "query_type": qa["query_type"],
-                "query_analysis": qa,
-                "results": results_payload,
-            })
+            yield _sse_event(
+                "search_results",
+                {
+                    "query_type": qa["query_type"],
+                    "query_analysis": qa,
+                    "results": results_payload,
+                },
+            )
 
             # Stream LLM answer tokens via queue bridge (sync generator → async yields)
             chunks = [
@@ -243,7 +273,7 @@ async def search_stream(request: SearchRequest):
     )
 
 
-@router.get("/documents", response_model=List[DocumentInfo])
+@router.get("/documents", response_model=list[DocumentInfo])
 async def list_documents():
     """List all documents in the system."""
     try:
@@ -256,7 +286,7 @@ async def list_documents():
                 documents = cur.fetchall()
             return [DocumentInfo(**dict(doc)) for doc in documents]
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/documents/{document_id}", response_model=DocumentDetail)
@@ -266,7 +296,7 @@ async def get_document_detail(document_id: str):
         with db_connection() as conn:
             stats = get_document_stats(conn, document_id)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
     if stats is None:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -279,18 +309,22 @@ async def delete_document(document_id: str):
     """Delete a document and all its passages, entities, and years."""
     try:
         uuid.UUID(document_id)
-    except (ValueError, AttributeError):
-        raise HTTPException(status_code=400, detail="Invalid document ID")
+    except (ValueError, AttributeError) as e:
+        raise HTTPException(status_code=400, detail="Invalid document ID") from e
 
     try:
         with db_connection() as conn:
             with conn.cursor() as cur:
                 # Get passage IDs for Meilisearch cleanup
-                cur.execute("SELECT id FROM passages WHERE document_id = %s", (document_id,))
+                cur.execute(
+                    "SELECT id FROM passages WHERE document_id = %s", (document_id,)
+                )
                 passage_ids = [str(row[0]) for row in cur.fetchall()]
 
                 # Delete from Postgres (cascades to passages, entities, years)
-                cur.execute("DELETE FROM documents WHERE id = %s RETURNING id", (document_id,))
+                cur.execute(
+                    "DELETE FROM documents WHERE id = %s RETURNING id", (document_id,)
+                )
                 deleted = cur.fetchone()
                 if not deleted:
                     raise HTTPException(status_code=404, detail="Document not found")
@@ -307,17 +341,17 @@ async def delete_document(document_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
     return {"status": "deleted", "document_id": document_id}
 
 
 @router.post("/documents/upload", status_code=202, response_model=IngestTaskInfo)
 async def upload_document(
-    file: UploadFile = File(...),
+    file: UploadFile = File(...),  # noqa: B008
     title: str = Form(""),
     authors: str = Form(""),
-    pub_year: Optional[int] = Form(None),
+    pub_year: int | None = Form(None),
 ):
     """Upload a document for ingestion. Returns a task ID for status polling.
 
@@ -327,7 +361,9 @@ async def upload_document(
     filename = file.filename or "upload"
     suffix = Path(filename).suffix.lower()
     if suffix not in (".pdf", ".txt"):
-        raise HTTPException(status_code=400, detail="Only PDF and TXT files are accepted")
+        raise HTTPException(
+            status_code=400, detail="Only PDF and TXT files are accepted"
+        )
 
     # Save to temp file
     tmp_dir = Path(tempfile.gettempdir()) / "codex_uploads"
@@ -347,7 +383,9 @@ async def upload_document(
         "created_at": now,
     }
 
-    asyncio.create_task(_run_ingestion(task_id, str(dest), title, authors, pub_year))
+    _background_task = asyncio.create_task(  # noqa: RUF006
+        _run_ingestion(task_id, str(dest), title, authors, pub_year)
+    )
 
     return _ingest_tasks[task_id]
 
@@ -362,7 +400,7 @@ async def get_upload_status(task_id: str):
 
 
 async def _run_ingestion(
-    task_id: str, file_path: str, title: str, authors: str, pub_year: Optional[int]
+    task_id: str, file_path: str, title: str, authors: str, pub_year: int | None
 ):
     """Background coroutine that runs ingest_document in a thread."""
     task = _ingest_tasks[task_id]
@@ -388,10 +426,10 @@ async def _run_ingestion(
         task["message"] = str(e)
     finally:
         # Clean up temp file
-        try:
-            Path(file_path).unlink(missing_ok=True)
-        except Exception:
-            pass
+        import contextlib
+
+        with contextlib.suppress(Exception):
+            await anyio.Path(file_path).unlink(missing_ok=True)
 
 
 @router.get("/stats")
@@ -401,7 +439,7 @@ async def get_stats():
         with db_connection() as conn:
             return get_system_stats(conn)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 app.include_router(router)
@@ -413,13 +451,16 @@ app.include_router(router)
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
+
 class NoCacheStaticMiddleware(BaseHTTPMiddleware):
     """Add no-cache headers to static file responses for development."""
+
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
         if request.url.path.startswith("/static/") or request.url.path == "/":
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         return response
+
 
 app.add_middleware(NoCacheStaticMiddleware)
 
@@ -435,4 +476,5 @@ if _static_dir.is_dir():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+    uvicorn.run(app, host="0.0.0.0", port=8000)  # noqa: S104

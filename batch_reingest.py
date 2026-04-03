@@ -9,17 +9,18 @@ Handles re-ingestion of multiple documents with options to:
 - Selective clearing
 """
 
-import os
-import sys
 import logging
+import sys
+from pathlib import Path
+from typing import Any
+
 import click
 from psycopg2.extras import RealDictCursor
-from typing import List, Dict, Any, Optional
-from pathlib import Path
 
-from config import db_connection, get_db_connection, get_meili_client, configure_logging
+from config import configure_logging, db_connection, get_meili_client
 
 logger = logging.getLogger(__name__)
+
 
 def clear_database():
     """Clear all data from the database."""
@@ -37,7 +38,8 @@ def clear_database():
 
         logger.info("Database cleared successfully")
 
-def clear_documents(documents: List[str]):
+
+def clear_documents(documents: list[str]):
     """Clear specific documents from the database."""
     logger.info("Clearing %d documents from database...", len(documents))
 
@@ -52,9 +54,15 @@ def clear_documents(documents: List[str]):
                 cur.execute("DELETE FROM documents WHERE id = %s", (doc_id,))
                 doc_count = cur.rowcount
 
-                logger.info("  Deleted document %s: %d document, %d passages", doc_id, doc_count, passage_count)
+                logger.info(
+                    "  Deleted document %s: %d document, %d passages",
+                    doc_id,
+                    doc_count,
+                    passage_count,
+                )
 
         logger.info("Documents cleared successfully")
+
 
 def clear_meilisearch():
     """Clear all data from Meilisearch."""
@@ -76,34 +84,45 @@ def clear_meilisearch():
     except Exception as e:
         logger.error("Error connecting to Meilisearch: %s", e)
 
-def get_document_info(conn, document_id: str) -> Optional[Dict[str, Any]]:
+
+def get_document_info(conn, document_id: str) -> dict[str, Any] | None:
     """Get document information."""
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("""
+        cur.execute(
+            """
             SELECT id, title, source_path, authors, pub_year
-            FROM documents 
+            FROM documents
             WHERE id = %s
-        """, (document_id,))
+        """,
+            (document_id,),
+        )
         return cur.fetchone()
 
-def list_all_documents() -> List[Dict[str, Any]]:
+
+def list_all_documents() -> list[dict[str, Any]]:
     """List all documents in the database."""
-    with db_connection() as conn:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("""
+    with db_connection() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute("""
                 SELECT id, title, source_path, authors, pub_year
                 FROM documents
                 ORDER BY title
             """)
-            return [dict(row) for row in cur.fetchall()]
+        return [dict(row) for row in cur.fetchall()]
 
-def reingest_document(file_path: str, title: str, authors: Optional[str] = None,
-                     pub_year: Optional[int] = None, debug: bool = False) -> bool:
+
+def reingest_document(
+    file_path: str,
+    title: str,
+    authors: str | None = None,
+    pub_year: int | None = None,
+    debug: bool = False,
+) -> bool:
     """Re-ingest a single document."""
     logger.info("Re-ingesting document: %s", Path(file_path).name)
 
     try:
         from ingest import ingest_document
+
         ingest_document(file_path, title, authors, pub_year, debug)
         logger.info("Successfully re-ingested: %s", Path(file_path).name)
         return True
@@ -111,12 +130,14 @@ def reingest_document(file_path: str, title: str, authors: Optional[str] = None,
         logger.error("Error re-ingesting %s: %s", Path(file_path).name, e)
         return False
 
-def run_embedding(document_ids: Optional[List[str]] = None):
+
+def run_embedding(document_ids: list[str] | None = None):
     """Run the embedding process."""
     logger.info("Running embedding process...")
 
     try:
         from embed import run_embeddings
+
         success = run_embeddings(document_ids)
         if success:
             logger.info("Embedding completed successfully")
@@ -127,15 +148,24 @@ def run_embedding(document_ids: Optional[List[str]] = None):
         logger.error("Error running embedding: %s", e)
         return False
 
+
 @click.command()
-@click.argument('documents', nargs=-1)
-@click.option('--all', is_flag=True, help='Re-ingest all documents')
-@click.option('--clear-first', is_flag=True, help='Clear database and Meilisearch first')
-@click.option('--clear-docs', help='Comma-separated list of document IDs to clear')
-@click.option('--skip-embedding', is_flag=True, help='Skip embedding generation')
-@click.option('--debug', is_flag=True, help='Show debug information')
-def main(documents: List[str], all: bool, clear_first: bool, clear_docs: Optional[str], 
-         skip_embedding: bool, debug: bool):
+@click.argument("documents", nargs=-1)
+@click.option("--all", is_flag=True, help="Re-ingest all documents")
+@click.option(
+    "--clear-first", is_flag=True, help="Clear database and Meilisearch first"
+)
+@click.option("--clear-docs", help="Comma-separated list of document IDs to clear")
+@click.option("--skip-embedding", is_flag=True, help="Skip embedding generation")
+@click.option("--debug", is_flag=True, help="Show debug information")
+def main(  # noqa: C901
+    documents: list[str],
+    all: bool,  # noqa: A002
+    clear_first: bool,
+    clear_docs: str | None,
+    skip_embedding: bool,
+    debug: bool,
+):
     """Batch re-ingest documents."""
     configure_logging(logging.DEBUG if debug else logging.INFO)
 
@@ -177,8 +207,8 @@ def main(documents: List[str], all: bool, clear_first: bool, clear_docs: Optiona
         clear_database()
         clear_meilisearch()
     elif clear_docs:
-        doc_ids_to_clear = [doc_id.strip() for doc_id in clear_docs.split(',')]
-        logger.info("Clearing specific documents: %s", ', '.join(doc_ids_to_clear))
+        doc_ids_to_clear = [doc_id.strip() for doc_id in clear_docs.split(",")]
+        logger.info("Clearing specific documents: %s", ", ".join(doc_ids_to_clear))
         clear_documents(doc_ids_to_clear)
 
     # Re-ingest documents
@@ -187,32 +217,30 @@ def main(documents: List[str], all: bool, clear_first: bool, clear_docs: Optiona
     failed = 0
 
     for i, doc in enumerate(documents_to_process, 1):
-        logger.info("[%d/%d] Processing: %s", i, len(documents_to_process), doc['title'])
+        logger.info(
+            "[%d/%d] Processing: %s", i, len(documents_to_process), doc["title"]
+        )
 
         # Check if source file exists
-        if not os.path.exists(doc['source_path']):
-            logger.error("Source file not found: %s", doc['source_path'])
+        if not Path(doc["source_path"]).exists():
+            logger.error("Source file not found: %s", doc["source_path"])
             failed += 1
             continue
-        
+
         # Prepare metadata
-        authors = ', '.join(doc['authors']) if doc['authors'] else None
-        pub_year = doc['pub_year']
-        
+        authors = ", ".join(doc["authors"]) if doc["authors"] else None
+        pub_year = doc["pub_year"]
+
         # Re-ingest
         success = reingest_document(
-            doc['source_path'], 
-            doc['title'], 
-            authors, 
-            pub_year, 
-            debug
+            doc["source_path"], doc["title"], authors, pub_year, debug
         )
-        
+
         if success:
             successful += 1
         else:
             failed += 1
-    
+
     # Summary
     logger.info("=== Re-ingestion Summary ===")
     logger.info("Total: %d", len(documents_to_process))
@@ -221,9 +249,9 @@ def main(documents: List[str], all: bool, clear_first: bool, clear_docs: Optiona
 
     if failed > 0:
         logger.info("Failed documents:")
-        for i, doc in enumerate(documents_to_process):
-            if not os.path.exists(doc['source_path']):
-                logger.info("  - %s: Source file not found", doc['title'])
+        for _, doc in enumerate(documents_to_process):
+            if not Path(doc["source_path"]).exists():
+                logger.info("  - %s: Source file not found", doc["title"])
 
     # Run embedding if requested
     if not skip_embedding and successful > 0:
@@ -234,7 +262,7 @@ def main(documents: List[str], all: bool, clear_first: bool, clear_docs: Optiona
             embedding_success = run_embedding()
         else:
             # Generate embeddings for specific documents
-            doc_ids = [doc['id'] for doc in documents_to_process]
+            doc_ids = [doc["id"] for doc in documents_to_process]
             embedding_success = run_embedding(doc_ids)
 
         if embedding_success:
@@ -243,13 +271,10 @@ def main(documents: List[str], all: bool, clear_first: bool, clear_docs: Optiona
             logger.error("Embedding generation failed")
 
     logger.info("=== Re-ingestion Complete ===")
-    
+
     if failed > 0:
         sys.exit(1)
 
+
 if __name__ == "__main__":
     main()
-
-
-
-
