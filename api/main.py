@@ -323,15 +323,6 @@ async def upload_document(
 
     Accepts PDF or TXT files. Ingestion runs in the background.
     """
-    # Log upload requests to diagnose phantom "Notes" documents
-    import traceback
-    logger.warning(
-        "UPLOAD REQUEST: filename=%r, title=%r, authors=%r, pub_year=%r, content_type=%r, size=%r",
-        file.filename, title, authors, pub_year, file.content_type,
-        file.size if hasattr(file, 'size') else 'unknown',
-    )
-    logger.warning("UPLOAD STACK:\n%s", "".join(traceback.format_stack()))
-
     # Validate file type
     filename = file.filename or "upload"
     suffix = Path(filename).suffix.lower()
