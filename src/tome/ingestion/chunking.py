@@ -27,7 +27,7 @@ def chunk_text_with_headings(  # noqa: C901
 ) -> list[dict[str, Any]]:
     """Chunk text while preserving heading hierarchy across pages."""
     chunks = []
-    current_headings = []  # Track current heading path across pages
+    current_headings: list[str] = []  # Track current heading path across pages
 
     for page_data in pages:
         page_num = page_data["page"]
@@ -37,7 +37,7 @@ def chunk_text_with_headings(  # noqa: C901
         # Split by paragraphs
         paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
 
-        current_chunk = []
+        current_chunk: list[str] = []
         current_tokens = 0
         chunk_headings = current_headings.copy()  # Headings for current chunk
 

@@ -130,7 +130,8 @@ class TestIngestSingleDocument:
 
     def test_exception_returns_error(self):
         with patch(
-            "tome.ingestion.batch_ingest.ingest_document", side_effect=Exception("Process failed")
+            "tome.ingestion.batch_ingest.ingest_document",
+            side_effect=Exception("Process failed"),
         ):
             result = ingest_single_document("/path/doc.pdf", {"title": "Doc"})
             assert result["status"] == "error"
@@ -173,7 +174,9 @@ class TestProcessDocumentsSequential:
     def test_processes_all_files(self):
         files = ["/path/a.pdf", "/path/b.pdf"]
         metadata_dict = {}
-        with patch("tome.ingestion.batch_ingest.ingest_document", return_value="doc-123"):
+        with patch(
+            "tome.ingestion.batch_ingest.ingest_document", return_value="doc-123"
+        ):
             results = process_documents_sequential(files, metadata_dict, debug=False)
             assert len(results) == 2
             assert all(r["status"] == "success" for r in results)
@@ -210,7 +213,10 @@ class TestProcessDocumentsSequential:
 
     def test_handles_errors(self):
         files = ["/path/a.pdf"]
-        with patch("tome.ingestion.batch_ingest.ingest_document", side_effect=Exception("failed")):
+        with patch(
+            "tome.ingestion.batch_ingest.ingest_document",
+            side_effect=Exception("failed"),
+        ):
             results = process_documents_sequential(files, {}, debug=False)
             assert results[0]["status"] == "error"
 
@@ -221,14 +227,17 @@ class TestProcessDocumentsSequential:
 class TestProcessDocumentsParallel:
     def test_processes_all_files(self):
         files = ["/path/a.pdf", "/path/b.pdf"]
-        with patch("tome.ingestion.batch_ingest.ingest_document", return_value="doc-123"):
+        with patch(
+            "tome.ingestion.batch_ingest.ingest_document", return_value="doc-123"
+        ):
             results = process_documents_parallel(files, {}, max_workers=2, debug=False)
             assert len(results) == 2
 
     def test_handles_future_exception(self):
         files = ["/path/a.pdf"]
         with patch(
-            "tome.ingestion.batch_ingest.ingest_document", side_effect=Exception("Process crash")
+            "tome.ingestion.batch_ingest.ingest_document",
+            side_effect=Exception("Process crash"),
         ):
             results = process_documents_parallel(files, {}, max_workers=1, debug=False)
             assert len(results) == 1
@@ -253,7 +262,9 @@ class TestMainCli:
         runner = CliRunner()
         with (
             caplog.at_level("INFO", logger="tome.ingestion.batch_ingest"),
-            patch("tome.ingestion.batch_ingest.ingest_document", return_value="doc-123"),
+            patch(
+                "tome.ingestion.batch_ingest.ingest_document", return_value="doc-123"
+            ),
         ):
             runner.invoke(main, [str(tmp_path)])
         assert "Successful: 1" in caplog.text
@@ -268,7 +279,10 @@ class TestMainCli:
         ]
         with (
             caplog.at_level("INFO", logger="tome.ingestion.batch_ingest"),
-            patch("tome.ingestion.batch_ingest.process_documents_parallel", return_value=mock_results),
+            patch(
+                "tome.ingestion.batch_ingest.process_documents_parallel",
+                return_value=mock_results,
+            ),
         ):
             runner.invoke(main, [str(tmp_path), "--parallel", "2"])
         assert "Successful: 2" in caplog.text
@@ -279,7 +293,9 @@ class TestMainCli:
         meta = tmp_path / "meta.json"
         meta.write_text(json.dumps([{"filename": "doc.pdf", "title": "Custom Doc"}]))
         runner = CliRunner()
-        with patch("tome.ingestion.batch_ingest.ingest_document", return_value="doc-123"):
+        with patch(
+            "tome.ingestion.batch_ingest.ingest_document", return_value="doc-123"
+        ):
             result = runner.invoke(main, [str(tmp_path), "--metadata", str(meta)])
             assert result.exit_code == 0
 
@@ -288,7 +304,9 @@ class TestMainCli:
         pdf.write_text("fake pdf")
         output = tmp_path / "results.json"
         runner = CliRunner()
-        with patch("tome.ingestion.batch_ingest.ingest_document", return_value="doc-123"):
+        with patch(
+            "tome.ingestion.batch_ingest.ingest_document", return_value="doc-123"
+        ):
             runner.invoke(main, [str(tmp_path), "--output", str(output)])
             assert output.exists()
             data = json.loads(output.read_text())
@@ -300,7 +318,10 @@ class TestMainCli:
         runner = CliRunner()
         with (
             caplog.at_level("INFO", logger="tome.ingestion.batch_ingest"),
-            patch("tome.ingestion.batch_ingest.ingest_document", side_effect=Exception("error")),
+            patch(
+                "tome.ingestion.batch_ingest.ingest_document",
+                side_effect=Exception("error"),
+            ),
         ):
             result = runner.invoke(main, [str(tmp_path)])
         assert "Failed: 1" in caplog.text

@@ -63,7 +63,9 @@ class TestAnalyzeQuery:
     def test_successful_analysis(self, mock_openai_client):
         from tome.search.search import analyze_query
 
-        with patch("tome.search.search.get_openai_client", return_value=mock_openai_client):
+        with patch(
+            "tome.search.search.get_openai_client", return_value=mock_openai_client
+        ):
             result = analyze_query("Who founded Cambridge?")
             assert "query_type" in result
             assert "expansions" in result
@@ -71,7 +73,9 @@ class TestAnalyzeQuery:
     def test_api_error_returns_defaults(self):
         from tome.search.search import analyze_query
 
-        with patch("tome.search.search.get_openai_client", side_effect=Exception("API down")):
+        with patch(
+            "tome.search.search.get_openai_client", side_effect=Exception("API down")
+        ):
             result = analyze_query("test query")
             assert result["query_type"] == "general"
             assert result["person"] is None
@@ -90,7 +94,9 @@ class TestAnalyzeQuery:
         mock_openai_client.chat.completions.create.return_value.choices[
             0
         ].message.content = json.dumps(response_data)
-        with patch("tome.search.search.get_openai_client", return_value=mock_openai_client):
+        with patch(
+            "tome.search.search.get_openai_client", return_value=mock_openai_client
+        ):
             result = analyze_query("What happened?")
             assert result["person"] is None
 
@@ -106,14 +112,18 @@ class TestAnalyzeQuery:
         mock_openai_client.chat.completions.create.return_value.choices[
             0
         ].message.content = json.dumps(response_data)
-        with patch("tome.search.search.get_openai_client", return_value=mock_openai_client):
+        with patch(
+            "tome.search.search.get_openai_client", return_value=mock_openai_client
+        ):
             result = analyze_query("What?")
             assert result["person"] is None
 
     def test_original_query_prepended_to_expansions(self, mock_openai_client):
         from tome.search.search import analyze_query
 
-        with patch("tome.search.search.get_openai_client", return_value=mock_openai_client):
+        with patch(
+            "tome.search.search.get_openai_client", return_value=mock_openai_client
+        ):
             result = analyze_query("Who was George Washington?")
             assert result["expansions"][0] == "Who was George Washington?"
 
@@ -129,7 +139,9 @@ class TestAnalyzeQuery:
         mock_openai_client.chat.completions.create.return_value.choices[
             0
         ].message.content = json.dumps(response_data)
-        with patch("tome.search.search.get_openai_client", return_value=mock_openai_client):
+        with patch(
+            "tome.search.search.get_openai_client", return_value=mock_openai_client
+        ):
             result = analyze_query("test")
             assert len(result["expansions"]) <= 15
 
@@ -141,7 +153,9 @@ class TestHybridSearch:
     def test_returns_id_score_tuples(self, mock_meili_client):
         from tome.search.search import hybrid_search
 
-        with patch("tome.search.search.get_meili_client", return_value=mock_meili_client):
+        with patch(
+            "tome.search.search.get_meili_client", return_value=mock_meili_client
+        ):
             results = hybrid_search("test query")
             assert len(results) == 2
             assert results[0] == ("passage-1", 0.95)
@@ -149,7 +163,9 @@ class TestHybridSearch:
     def test_with_document_id_filter(self, mock_meili_client):
         from tome.search.search import hybrid_search
 
-        with patch("tome.search.search.get_meili_client", return_value=mock_meili_client):
+        with patch(
+            "tome.search.search.get_meili_client", return_value=mock_meili_client
+        ):
             test_uuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
             hybrid_search("test", document_id=test_uuid)
             mock_meili_client.index("passages").search.assert_called()
@@ -168,7 +184,8 @@ class TestHybridSearch:
         from tome.search.search import hybrid_search
 
         with patch(
-            "tome.search.search.get_meili_client", side_effect=Exception("Connection refused")
+            "tome.search.search.get_meili_client",
+            side_effect=Exception("Connection refused"),
         ):
             results = hybrid_search("test")
             assert results == []
@@ -265,7 +282,10 @@ class TestSearchCodex:
                 return_value={"query_type": "factoid", "expansions": ["q"]},
             ),
             patch("tome.search.search.hybrid_search", return_value=[("p1", 0.9)]),
-            patch("tome.search.search.db_connection", make_mock_db_connection(mock_db_conn)),
+            patch(
+                "tome.search.search.db_connection",
+                make_mock_db_connection(mock_db_conn),
+            ),
             patch("tome.search.search.rerank_candidates", return_value=[("p1", 0.95)]),
             patch(
                 "tome.search.search.get_passage_details",

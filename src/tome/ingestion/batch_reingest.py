@@ -96,7 +96,8 @@ def get_document_info(conn, document_id: str) -> dict[str, Any] | None:
         """,
             (document_id,),
         )
-        return cur.fetchone()
+        row = cur.fetchone()
+        return dict(row) if row else None
 
 
 def list_all_documents() -> list[dict[str, Any]]:

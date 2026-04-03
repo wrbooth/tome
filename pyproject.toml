@@ -1,10 +1,11 @@
 [project]
 name = "tome"
 version = "0.1.0"
-description = "Indexing & Search POC for document ingestion and retrieval"
+description = "Document ingestion, indexing, and semantic search engine"
 authors = [
     {name = "Tome Team"}
 ]
+license = {text = "MIT"}
 readme = "README.md"
 requires-python = ">=3.10,<3.14"
 dependencies = [
@@ -76,8 +77,8 @@ no_implicit_optional = true
 strict_optional = true
 
 [[tool.mypy.overrides]]
-module = "tests.*"
-disallow_untyped_defs = false
+module = ["fitz", "psycopg2.*", "tabulate"]
+ignore_missing_imports = true
 
 [dependency-groups]
 dev = [

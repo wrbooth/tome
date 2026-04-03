@@ -32,7 +32,7 @@ def _get_nlp():
 
 def extract_entities_and_years(text: str) -> tuple[list[dict[str, str]], list[int]]:
     """Extract entities and years from text."""
-    entities = []
+    entities: list[dict[str, str]] = []
     years = []
 
     # Extract years using regex

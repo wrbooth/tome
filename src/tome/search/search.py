@@ -30,7 +30,7 @@ def analyze_query(query: str) -> dict[str, Any]:
     Analyze a query in a single LLM call using structured output.
     Returns classification, entities, person name, and search expansions.
     """
-    default_result = {
+    default_result: dict[str, Any] = {
         "query_type": "general",
         "person": None,
         "entities": {
@@ -189,7 +189,7 @@ def analyze_query(query: str) -> dict[str, Any]:
             },
         )
 
-        result = json.loads(response.choices[0].message.content)
+        result: dict[str, Any] = json.loads(response.choices[0].message.content)
 
         # Normalize person field
         if not result["person"] or result["person"].lower() == "none":

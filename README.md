@@ -44,7 +44,7 @@ flowchart LR
 ### 1. Clone and install
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/wrbooth/tome.git
 cd tome
 
 # Install dependencies (including dev tools)
@@ -230,4 +230,4 @@ uv run tome-batch-reingest --all --clear-first
 
 ## License
 
-See individual component licenses for details.
+This project is licensed under the [MIT License](LICENSE).

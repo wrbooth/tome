@@ -144,7 +144,9 @@ class TestStorePassages:
                 "headings_path": ["Ch1"],
             },
         ]
-        with patch("tome.ingestion.storage.extract_entities_and_years", return_value=([], [])):
+        with patch(
+            "tome.ingestion.storage.extract_entities_and_years", return_value=([], [])
+        ):
             ids = store_passages(mock_db_conn, "doc-1", chunks)
             assert len(ids) == 1
             assert len(ids[0]) == 36
@@ -159,7 +161,8 @@ class TestStorePassages:
             {"page": 1, "text": "Text.", "original_text": "Text.", "headings_path": []},
         ]
         with patch(
-            "tome.ingestion.storage.extract_entities_and_years", return_value=(entities, years)
+            "tome.ingestion.storage.extract_entities_and_years",
+            return_value=(entities, years),
         ):
             store_passages(mock_db_conn, "doc-1", chunks)
             # Should have INSERT for passage + entity + year = 3 execute calls
@@ -175,7 +178,9 @@ class TestStorePassages:
             }
             for i in range(3)
         ]
-        with patch("tome.ingestion.storage.extract_entities_and_years", return_value=([], [])):
+        with patch(
+            "tome.ingestion.storage.extract_entities_and_years", return_value=([], [])
+        ):
             ids = store_passages(mock_db_conn, "doc-1", chunks)
             assert len(ids) == 3
             mock_db_conn.commit.assert_called_once()
@@ -206,8 +211,14 @@ class TestIndexInMeilisearch:
         ]
         passage_ids = ["p-1"]
         with (
-            patch("tome.ingestion.storage.get_meili_client", return_value=mock_meili_client),
-            patch("tome.ingestion.storage.extract_entities_and_years", return_value=([], [])),
+            patch(
+                "tome.ingestion.storage.get_meili_client",
+                return_value=mock_meili_client,
+            ),
+            patch(
+                "tome.ingestion.storage.extract_entities_and_years",
+                return_value=([], []),
+            ),
         ):
             index_in_meilisearch(passages, passage_ids, "doc-1")
             mock_meili_client.index("passages").add_documents.assert_called_once()
@@ -220,8 +231,14 @@ class TestIndexInMeilisearch:
             {"page": 1, "text": "Text.", "original_text": "Text.", "headings_path": []},
         ]
         with (
-            patch("tome.ingestion.storage.get_meili_client", return_value=mock_meili_client),
-            patch("tome.ingestion.storage.extract_entities_and_years", return_value=([], [])),
+            patch(
+                "tome.ingestion.storage.get_meili_client",
+                return_value=mock_meili_client,
+            ),
+            patch(
+                "tome.ingestion.storage.extract_entities_and_years",
+                return_value=([], []),
+            ),
             patch("tome.ingestion.storage.settings") as mock_settings,
         ):
             mock_settings.openai_api_key = "sk-test"
@@ -237,22 +254,32 @@ class TestIndexInMeilisearch:
             {"page": 1, "text": "Text.", "original_text": "Text.", "headings_path": []},
         ]
         with (
-            patch("tome.ingestion.storage.get_meili_client", return_value=mock_meili_client),
-            patch("tome.ingestion.storage.extract_entities_and_years", return_value=([], [])),
+            patch(
+                "tome.ingestion.storage.get_meili_client",
+                return_value=mock_meili_client,
+            ),
+            patch(
+                "tome.ingestion.storage.extract_entities_and_years",
+                return_value=([], []),
+            ),
         ):
             index_in_meilisearch(passages, ["p-1"], "doc-1")
             mock_meili_client.index("passages").update_embedders.assert_not_called()
 
     def test_meilisearch_exception_handled(self, caplog):
         with patch(
-            "tome.ingestion.storage.get_meili_client", side_effect=Exception("Connection refused")
+            "tome.ingestion.storage.get_meili_client",
+            side_effect=Exception("Connection refused"),
         ):
             with caplog.at_level("WARNING", logger="tome.ingestion.storage"):
                 index_in_meilisearch([], [], "doc-1")
             assert any("Meilisearch" in r.message for r in caplog.records)
 
     def test_import_error_handled(self, caplog):
-        with patch("tome.ingestion.storage.get_meili_client", side_effect=ImportError("no module")):
+        with patch(
+            "tome.ingestion.storage.get_meili_client",
+            side_effect=ImportError("no module"),
+        ):
             with caplog.at_level("WARNING", logger="tome.ingestion.storage"):
                 index_in_meilisearch([], [], "doc-1")
             assert any("Meilisearch" in r.message for r in caplog.records)
@@ -293,7 +320,8 @@ class TestExtractHeadingsFromOutline:
 
     def test_exception_returns_empty(self):
         with patch(
-            "tome.ingestion.heading_detection.fitz.open", side_effect=Exception("File not found")
+            "tome.ingestion.heading_detection.fitz.open",
+            side_effect=Exception("File not found"),
         ):
             headings = extract_headings_from_outline("missing.pdf")
             assert headings == []
@@ -323,7 +351,9 @@ class TestExtractHeadingsFromTocPages:
             assert headings[0]["detection_method"] == "toc_parsing"
 
     def test_exception_returns_empty(self):
-        with patch("tome.ingestion.heading_detection.fitz.open", side_effect=Exception("Error")):
+        with patch(
+            "tome.ingestion.heading_detection.fitz.open", side_effect=Exception("Error")
+        ):
             assert extract_headings_from_toc_pages("missing.pdf") == []
 
 
@@ -407,7 +437,9 @@ class TestExtractHeadingsByTypography:
             assert titles.count("SAME HEADING") <= 1
 
     def test_exception_returns_empty(self):
-        with patch("tome.ingestion.heading_detection.fitz.open", side_effect=Exception("Error")):
+        with patch(
+            "tome.ingestion.heading_detection.fitz.open", side_effect=Exception("Error")
+        ):
             assert extract_headings_by_typography("missing.pdf") == []
 
 
@@ -431,7 +463,9 @@ class TestDetectHeadingPatternsFromFile:
             assert headings[0]["detection_method"] == "regex"
 
     def test_exception_returns_empty(self):
-        with patch("tome.ingestion.heading_detection.fitz.open", side_effect=Exception("Error")):
+        with patch(
+            "tome.ingestion.heading_detection.fitz.open", side_effect=Exception("Error")
+        ):
             assert detect_heading_patterns_from_file("missing.pdf") == []
 
 
@@ -441,7 +475,9 @@ class TestDetectHeadingPatternsFromFile:
 class TestMergeHeadingDetectionMethods:
     def test_combines_all_methods(self):
         with (
-            patch("tome.ingestion.heading_detection.fitz.open", return_value=MagicMock()),
+            patch(
+                "tome.ingestion.heading_detection.fitz.open", return_value=MagicMock()
+            ),
             patch(
                 "tome.ingestion.heading_detection.extract_headings_from_outline",
                 return_value=[
@@ -453,10 +489,17 @@ class TestMergeHeadingDetectionMethods:
                     }
                 ],
             ),
-            patch("tome.ingestion.heading_detection.extract_headings_from_toc_pages", return_value=[]),
-            patch("tome.ingestion.heading_detection.extract_headings_by_typography", return_value=[]),
             patch(
-                "tome.ingestion.heading_detection.detect_heading_patterns_from_file", return_value=[]
+                "tome.ingestion.heading_detection.extract_headings_from_toc_pages",
+                return_value=[],
+            ),
+            patch(
+                "tome.ingestion.heading_detection.extract_headings_by_typography",
+                return_value=[],
+            ),
+            patch(
+                "tome.ingestion.heading_detection.detect_heading_patterns_from_file",
+                return_value=[],
             ),
         ):
             headings = merge_heading_detection_methods("fake.pdf")
@@ -465,7 +508,9 @@ class TestMergeHeadingDetectionMethods:
 
     def test_assigns_correct_confidence_scores(self):
         with (
-            patch("tome.ingestion.heading_detection.fitz.open", return_value=MagicMock()),
+            patch(
+                "tome.ingestion.heading_detection.fitz.open", return_value=MagicMock()
+            ),
             patch(
                 "tome.ingestion.heading_detection.extract_headings_from_outline",
                 return_value=[
@@ -518,7 +563,9 @@ class TestMergeHeadingDetectionMethods:
 
     def test_filters_to_level_1(self):
         with (
-            patch("tome.ingestion.heading_detection.fitz.open", return_value=MagicMock()),
+            patch(
+                "tome.ingestion.heading_detection.fitz.open", return_value=MagicMock()
+            ),
             patch(
                 "tome.ingestion.heading_detection.extract_headings_from_outline",
                 return_value=[
@@ -536,10 +583,17 @@ class TestMergeHeadingDetectionMethods:
                     },
                 ],
             ),
-            patch("tome.ingestion.heading_detection.extract_headings_from_toc_pages", return_value=[]),
-            patch("tome.ingestion.heading_detection.extract_headings_by_typography", return_value=[]),
             patch(
-                "tome.ingestion.heading_detection.detect_heading_patterns_from_file", return_value=[]
+                "tome.ingestion.heading_detection.extract_headings_from_toc_pages",
+                return_value=[],
+            ),
+            patch(
+                "tome.ingestion.heading_detection.extract_headings_by_typography",
+                return_value=[],
+            ),
+            patch(
+                "tome.ingestion.heading_detection.detect_heading_patterns_from_file",
+                return_value=[],
             ),
         ):
             headings = merge_heading_detection_methods("fake.pdf")
@@ -548,9 +602,17 @@ class TestMergeHeadingDetectionMethods:
 
     def test_preserves_appendix_headings(self):
         with (
-            patch("tome.ingestion.heading_detection.fitz.open", return_value=MagicMock()),
-            patch("tome.ingestion.heading_detection.extract_headings_from_outline", return_value=[]),
-            patch("tome.ingestion.heading_detection.extract_headings_from_toc_pages", return_value=[]),
+            patch(
+                "tome.ingestion.heading_detection.fitz.open", return_value=MagicMock()
+            ),
+            patch(
+                "tome.ingestion.heading_detection.extract_headings_from_outline",
+                return_value=[],
+            ),
+            patch(
+                "tome.ingestion.heading_detection.extract_headings_from_toc_pages",
+                return_value=[],
+            ),
             patch(
                 "tome.ingestion.heading_detection.extract_headings_by_typography",
                 return_value=[
@@ -563,7 +625,8 @@ class TestMergeHeadingDetectionMethods:
                 ],
             ),
             patch(
-                "tome.ingestion.heading_detection.detect_heading_patterns_from_file", return_value=[]
+                "tome.ingestion.heading_detection.detect_heading_patterns_from_file",
+                return_value=[],
             ),
         ):
             headings = merge_heading_detection_methods("fake.pdf")
@@ -600,7 +663,10 @@ class TestExtractTextWithFontInfo:
 
         with (
             patch("tome.ingestion.pdf_extraction.fitz.open", return_value=mock_doc),
-            patch("tome.ingestion.pdf_extraction.merge_heading_detection_methods", return_value=[]),
+            patch(
+                "tome.ingestion.pdf_extraction.merge_heading_detection_methods",
+                return_value=[],
+            ),
         ):
             pages = extract_text_with_font_info("fake.pdf")
             assert len(pages) == 1
@@ -662,10 +728,21 @@ class TestIngestDocument:
         mock_conn = MagicMock()
 
         with (
-            patch("tome.ingestion.ingest.extract_text_with_font_info", return_value=mock_pages),
-            patch("tome.ingestion.ingest.merge_heading_detection", return_value=mock_pages),
-            patch("tome.ingestion.ingest.chunk_text_with_headings", return_value=mock_chunks),
-            patch("tome.ingestion.ingest.db_connection", make_mock_db_connection(mock_conn)),
+            patch(
+                "tome.ingestion.ingest.extract_text_with_font_info",
+                return_value=mock_pages,
+            ),
+            patch(
+                "tome.ingestion.ingest.merge_heading_detection", return_value=mock_pages
+            ),
+            patch(
+                "tome.ingestion.ingest.chunk_text_with_headings",
+                return_value=mock_chunks,
+            ),
+            patch(
+                "tome.ingestion.ingest.db_connection",
+                make_mock_db_connection(mock_conn),
+            ),
             patch("tome.ingestion.ingest.store_document", return_value="doc-123"),
             patch("tome.ingestion.ingest.store_passages", return_value=["p-1"]),
             patch("tome.ingestion.ingest.index_in_meilisearch"),
@@ -686,10 +763,20 @@ class TestIngestDocument:
         mock_conn = MagicMock()
 
         with (
-            patch("tome.ingestion.ingest.extract_text_from_txt", return_value=mock_pages),
-            patch("tome.ingestion.ingest.merge_heading_detection", return_value=mock_pages),
-            patch("tome.ingestion.ingest.chunk_text_with_headings", return_value=mock_chunks),
-            patch("tome.ingestion.ingest.db_connection", make_mock_db_connection(mock_conn)),
+            patch(
+                "tome.ingestion.ingest.extract_text_from_txt", return_value=mock_pages
+            ),
+            patch(
+                "tome.ingestion.ingest.merge_heading_detection", return_value=mock_pages
+            ),
+            patch(
+                "tome.ingestion.ingest.chunk_text_with_headings",
+                return_value=mock_chunks,
+            ),
+            patch(
+                "tome.ingestion.ingest.db_connection",
+                make_mock_db_connection(mock_conn),
+            ),
             patch("tome.ingestion.ingest.store_document", return_value="doc-456"),
             patch("tome.ingestion.ingest.store_passages", return_value=["p-1"]),
             patch("tome.ingestion.ingest.index_in_meilisearch"),
@@ -714,11 +801,23 @@ class TestIngestDocument:
         mock_conn = MagicMock()
 
         with (
-            patch("tome.ingestion.ingest.extract_text_from_txt", return_value=mock_pages),
-            patch("tome.ingestion.ingest.merge_heading_detection", return_value=mock_pages),
-            patch("tome.ingestion.ingest.chunk_text_with_headings", return_value=mock_chunks),
-            patch("tome.ingestion.ingest.db_connection", make_mock_db_connection(mock_conn)),
-            patch("tome.ingestion.ingest.store_document", return_value="doc-1") as mock_store,
+            patch(
+                "tome.ingestion.ingest.extract_text_from_txt", return_value=mock_pages
+            ),
+            patch(
+                "tome.ingestion.ingest.merge_heading_detection", return_value=mock_pages
+            ),
+            patch(
+                "tome.ingestion.ingest.chunk_text_with_headings",
+                return_value=mock_chunks,
+            ),
+            patch(
+                "tome.ingestion.ingest.db_connection",
+                make_mock_db_connection(mock_conn),
+            ),
+            patch(
+                "tome.ingestion.ingest.store_document", return_value="doc-1"
+            ) as mock_store,
             patch("tome.ingestion.ingest.store_passages", return_value=["p-1"]),
             patch("tome.ingestion.ingest.index_in_meilisearch"),
         ):
@@ -739,11 +838,23 @@ class TestIngestDocument:
         mock_conn = MagicMock()
 
         with (
-            patch("tome.ingestion.ingest.extract_text_from_txt", return_value=mock_pages),
-            patch("tome.ingestion.ingest.merge_heading_detection", return_value=mock_pages),
-            patch("tome.ingestion.ingest.chunk_text_with_headings", return_value=mock_chunks),
-            patch("tome.ingestion.ingest.db_connection", make_mock_db_connection(mock_conn)),
-            patch("tome.ingestion.ingest.store_document", return_value="doc-1") as mock_store,
+            patch(
+                "tome.ingestion.ingest.extract_text_from_txt", return_value=mock_pages
+            ),
+            patch(
+                "tome.ingestion.ingest.merge_heading_detection", return_value=mock_pages
+            ),
+            patch(
+                "tome.ingestion.ingest.chunk_text_with_headings",
+                return_value=mock_chunks,
+            ),
+            patch(
+                "tome.ingestion.ingest.db_connection",
+                make_mock_db_connection(mock_conn),
+            ),
+            patch(
+                "tome.ingestion.ingest.store_document", return_value="doc-1"
+            ) as mock_store,
             patch("tome.ingestion.ingest.store_passages", return_value=["p-1"]),
             patch("tome.ingestion.ingest.index_in_meilisearch"),
         ):
@@ -764,10 +875,20 @@ class TestIngestDocument:
         mock_conn = MagicMock()
 
         with (
-            patch("tome.ingestion.ingest.extract_text_from_txt", return_value=mock_pages),
-            patch("tome.ingestion.ingest.merge_heading_detection", return_value=mock_pages),
-            patch("tome.ingestion.ingest.chunk_text_with_headings", return_value=mock_chunks),
-            patch("tome.ingestion.ingest.db_connection", make_mock_db_connection(mock_conn)),
+            patch(
+                "tome.ingestion.ingest.extract_text_from_txt", return_value=mock_pages
+            ),
+            patch(
+                "tome.ingestion.ingest.merge_heading_detection", return_value=mock_pages
+            ),
+            patch(
+                "tome.ingestion.ingest.chunk_text_with_headings",
+                return_value=mock_chunks,
+            ),
+            patch(
+                "tome.ingestion.ingest.db_connection",
+                make_mock_db_connection(mock_conn),
+            ),
             patch("tome.ingestion.ingest.store_document", return_value="doc-1"),
             patch("tome.ingestion.ingest.store_passages", return_value=["p-1"]),
             patch("tome.ingestion.ingest.index_in_meilisearch"),
