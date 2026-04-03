@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Codex Search Test Script
+Tome Search Test Script
 
 Tests search performance on specific historical questions
 with expected page numbers and answers.
@@ -33,7 +33,7 @@ def run_search(query: str, k: int = 20) -> dict:
     """Run a search query and return the results."""
     try:
         result = subprocess.run(
-            ["uv", "run", "python", "codex.search.search.py", "--q", query, "--k", str(k)],
+            ["uv", "run", "python", "tome.search.search.py", "--q", query, "--k", str(k)],
             capture_output=True,
             text=True,
             timeout=120,
@@ -589,7 +589,7 @@ def main():
     import argparse
 
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description="Run Codex search system tests")
+    parser = argparse.ArgumentParser(description="Run Tome search system tests")
     parser.add_argument(
         "--serial",
         action="store_true",
@@ -753,7 +753,7 @@ def main():
         ),
     ]
 
-    print("Running Codex Search System Tests...")
+    print("Running Tome Search System Tests...")
 
     if args.serial:
         print(f"Testing {len(test_questions)} questions serially...")

@@ -1,4 +1,4 @@
-"""Shared fixtures for Codex unit tests."""
+"""Shared fixtures for Tome unit tests."""
 
 from contextlib import contextmanager
 from unittest.mock import MagicMock

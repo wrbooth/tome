@@ -7,12 +7,12 @@ from unittest.mock import MagicMock, patch
 
 class TestFormatChunksForLlm:
     def test_empty_list(self):
-        from codex.search.answer_generator import format_chunks_for_llm
+        from tome.search.answer_generator import format_chunks_for_llm
 
         assert format_chunks_for_llm([]) == ""
 
     def test_single_chunk(self):
-        from codex.search.answer_generator import format_chunks_for_llm
+        from tome.search.answer_generator import format_chunks_for_llm
 
         chunks = [{"text": "Hello world.", "page": 5, "title": "My Doc"}]
         result = format_chunks_for_llm(chunks)
@@ -22,7 +22,7 @@ class TestFormatChunksForLlm:
         assert "Hello world." in result
 
     def test_multiple_chunks_numbered(self):
-        from codex.search.answer_generator import format_chunks_for_llm
+        from tome.search.answer_generator import format_chunks_for_llm
 
         chunks = [
             {"text": "First.", "page": 1, "title": "Doc A"},
@@ -33,14 +33,14 @@ class TestFormatChunksForLlm:
         assert "CHUNK 2" in result
 
     def test_missing_title_defaults(self):
-        from codex.search.answer_generator import format_chunks_for_llm
+        from tome.search.answer_generator import format_chunks_for_llm
 
         chunks = [{"text": "Some text.", "page": 1}]
         result = format_chunks_for_llm(chunks)
         assert "Unknown Document" in result
 
     def test_missing_page_defaults(self):
-        from codex.search.answer_generator import format_chunks_for_llm
+        from tome.search.answer_generator import format_chunks_for_llm
 
         chunks = [{"text": "Some text.", "title": "Doc"}]
         result = format_chunks_for_llm(chunks)
@@ -52,7 +52,7 @@ class TestFormatChunksForLlm:
 
 class TestExtractSourcePages:
     def test_parses_sources_format(self):
-        from codex.search.answer_generator import extract_source_pages
+        from tome.search.answer_generator import extract_source_pages
 
         answer = (
             "The answer is yes. Sources: [History Book, Page 10; Other Book, Page 20]"
@@ -66,7 +66,7 @@ class TestExtractSourcePages:
         assert result[1]["page"] == 20
 
     def test_fallback_to_chunks_when_no_sources(self):
-        from codex.search.answer_generator import extract_source_pages
+        from tome.search.answer_generator import extract_source_pages
 
         answer = "The answer is yes."
         chunks = [
@@ -78,7 +78,7 @@ class TestExtractSourcePages:
         assert result[0]["page"] == 5
 
     def test_single_source(self):
-        from codex.search.answer_generator import extract_source_pages
+        from tome.search.answer_generator import extract_source_pages
 
         answer = "Answer. Sources: [Doc Title, Page 42]"
         result = extract_source_pages(answer, [])
@@ -86,7 +86,7 @@ class TestExtractSourcePages:
         assert result[0]["page"] == 42
 
     def test_malformed_source_skipped(self):
-        from codex.search.answer_generator import extract_source_pages
+        from tome.search.answer_generator import extract_source_pages
 
         answer = "Answer. Sources: [malformed entry without page]"
         chunks = [{"title": "Fallback", "page": 1}]
@@ -95,7 +95,7 @@ class TestExtractSourcePages:
         assert isinstance(result, list)
 
     def test_case_insensitive_sources(self):
-        from codex.search.answer_generator import extract_source_pages
+        from tome.search.answer_generator import extract_source_pages
 
         answer = "Answer. sources: [Doc, Page 5]"
         result = extract_source_pages(answer, [])
@@ -107,21 +107,21 @@ class TestExtractSourcePages:
 
 class TestFormatAnswerWithSources:
     def test_sources_already_in_answer(self):
-        from codex.search.answer_generator import format_answer_with_sources
+        from tome.search.answer_generator import format_answer_with_sources
 
         data = {"answer": "Answer text. Sources: [Doc, Page 5]", "sources": []}
         result = format_answer_with_sources(data)
         assert result == data["answer"]
 
     def test_lowercase_sources_in_answer(self):
-        from codex.search.answer_generator import format_answer_with_sources
+        from tome.search.answer_generator import format_answer_with_sources
 
         data = {"answer": "Answer. sources: listed here", "sources": []}
         result = format_answer_with_sources(data)
         assert result == data["answer"]
 
     def test_dict_format_sources_appended(self):
-        from codex.search.answer_generator import format_answer_with_sources
+        from tome.search.answer_generator import format_answer_with_sources
 
         data = {
             "answer": "The answer is yes.",
@@ -133,7 +133,7 @@ class TestFormatAnswerWithSources:
         assert "Doc B, Page 10" in result
 
     def test_legacy_int_sources(self):
-        from codex.search.answer_generator import format_answer_with_sources
+        from tome.search.answer_generator import format_answer_with_sources
 
         data = {"answer": "The answer.", "sources": [5, 10, 3]}
         result = format_answer_with_sources(data)
@@ -142,14 +142,14 @@ class TestFormatAnswerWithSources:
         assert "Page 10" in result
 
     def test_empty_sources_no_suffix(self):
-        from codex.search.answer_generator import format_answer_with_sources
+        from tome.search.answer_generator import format_answer_with_sources
 
         data = {"answer": "The answer.", "sources": []}
         result = format_answer_with_sources(data)
         assert result == "The answer."
 
     def test_missing_answer_key(self):
-        from codex.search.answer_generator import format_answer_with_sources
+        from tome.search.answer_generator import format_answer_with_sources
 
         data = {"sources": []}
         result = format_answer_with_sources(data)
@@ -161,7 +161,7 @@ class TestFormatAnswerWithSources:
 
 class TestGenerateAnswerWithLlm:
     def test_empty_chunks_returns_no_answer(self):
-        from codex.search.answer_generator import generate_answer_with_llm
+        from tome.search.answer_generator import generate_answer_with_llm
 
         result = generate_answer_with_llm("What happened?", [])
         assert (
@@ -171,7 +171,7 @@ class TestGenerateAnswerWithLlm:
         assert result["confidence"] == "none"
 
     def test_successful_call(self):
-        from codex.search.answer_generator import generate_answer_with_llm
+        from tome.search.answer_generator import generate_answer_with_llm
 
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
@@ -179,7 +179,7 @@ class TestGenerateAnswerWithLlm:
             0
         ].message.content = "The answer is yes. Sources: [Doc, Page 5]"
 
-        with patch("codex.search.answer_generator._get_client") as mock_get_client:
+        with patch("tome.search.answer_generator._get_client") as mock_get_client:
             mock_get_client.return_value.chat.completions.create.return_value = (
                 mock_response
             )
@@ -189,9 +189,9 @@ class TestGenerateAnswerWithLlm:
             assert result["confidence"] == "high"
 
     def test_api_exception_returns_error(self):
-        from codex.search.answer_generator import generate_answer_with_llm
+        from tome.search.answer_generator import generate_answer_with_llm
 
-        with patch("codex.search.answer_generator._get_client") as mock_get_client:
+        with patch("tome.search.answer_generator._get_client") as mock_get_client:
             mock_get_client.return_value.chat.completions.create.side_effect = (
                 Exception("API error")
             )
@@ -206,7 +206,7 @@ class TestGenerateAnswerWithLlm:
 
 class TestAnswerQuery:
     def test_pipeline_orchestration(self):
-        from codex.search.answer_generator import answer_query
+        from tome.search.answer_generator import answer_query
 
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
@@ -214,7 +214,7 @@ class TestAnswerQuery:
             0
         ].message.content = "Generated answer. Sources: [Doc, Page 1]"
 
-        with patch("codex.search.answer_generator._get_client") as mock_get_client:
+        with patch("tome.search.answer_generator._get_client") as mock_get_client:
             mock_get_client.return_value.chat.completions.create.return_value = (
                 mock_response
             )
@@ -224,7 +224,7 @@ class TestAnswerQuery:
             assert "Generated answer" in result
 
     def test_empty_search_results(self):
-        from codex.search.answer_generator import answer_query
+        from tome.search.answer_generator import answer_query
 
         result = answer_query("What?", [])
         assert isinstance(result, str)

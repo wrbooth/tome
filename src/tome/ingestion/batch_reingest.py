@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Codex Batch Re-ingestion Script
+Tome Batch Re-ingestion Script
 
 Handles re-ingestion of multiple documents with options to:
 - Clear database and Meilisearch first
@@ -17,7 +17,7 @@ from typing import Any
 import click
 from psycopg2.extras import RealDictCursor
 
-from codex.config import configure_logging, db_connection, get_meili_client
+from tome.config import configure_logging, db_connection, get_meili_client
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +121,7 @@ def reingest_document(
     logger.info("Re-ingesting document: %s", Path(file_path).name)
 
     try:
-        from codex.ingestion.ingest import ingest_document
+        from tome.ingestion.ingest import ingest_document
 
         ingest_document(file_path, title, authors, pub_year, debug)
         logger.info("Successfully re-ingested: %s", Path(file_path).name)
@@ -136,7 +136,7 @@ def run_embedding(document_ids: list[str] | None = None):
     logger.info("Running embedding process...")
 
     try:
-        from codex.search.embed import run_embeddings
+        from tome.search.embed import run_embeddings
 
         success = run_embeddings(document_ids)
         if success:
@@ -169,7 +169,7 @@ def main(  # noqa: C901
     """Batch re-ingest documents."""
     configure_logging(logging.DEBUG if debug else logging.INFO)
 
-    logger.info("=== Codex Batch Re-ingestion ===")
+    logger.info("=== Tome Batch Re-ingestion ===")
 
     # Determine which documents to process
     if all:

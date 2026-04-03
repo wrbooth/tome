@@ -2,7 +2,7 @@
 
 from unittest.mock import patch
 
-from codex.ingestion.ingest import (
+from tome.ingestion.ingest import (
     count_tokens,
     detect_heading_patterns,
     extract_entities_and_years,
@@ -428,7 +428,7 @@ class TestExtractEntitiesAndYears:
             assert entity["norm_entity"] == entity["entity"].lower()
 
     def test_nlp_none_returns_empty_entities(self):
-        with patch("codex.ingestion.entities._get_nlp", return_value=None):
+        with patch("tome.ingestion.entities._get_nlp", return_value=None):
             entities, years = extract_entities_and_years("George Washington in 1776.")
             assert entities == []
             assert 1776 in years  # years still extracted via regex

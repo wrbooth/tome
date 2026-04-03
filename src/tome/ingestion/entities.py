@@ -1,5 +1,5 @@
 """
-Entity and year extraction for the Codex ingestion pipeline.
+Entity and year extraction for the Tome ingestion pipeline.
 
 Uses spaCy NER for entity extraction and regex for year detection.
 """

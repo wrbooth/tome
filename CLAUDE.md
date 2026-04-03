@@ -8,13 +8,13 @@ uv run pytest tests/unit/ --cov=src --cov-report=term-missing  # Tests with cove
 uv run pytest tests/unit/test_ingest_pure.py -v       # Run single test file
 uv run pytest tests/integration/ -v                   # Run integration tests (require live services)
 
-uv run codex-ingest <file> --title "..."              # Ingest a document
-uv run codex-batch-reingest --all --clear-first       # Full reingest
-uv run codex-search --q "query" --k 20                # Search
-uv run codex-documents list                           # List documents
-uv run codex-embed --provider openai                  # Generate embeddings
+uv run tome-ingest <file> --title "..."              # Ingest a document
+uv run tome-batch-reingest --all --clear-first       # Full reingest
+uv run tome-search --q "query" --k 20                # Search
+uv run tome-documents list                           # List documents
+uv run tome-embed --provider openai                  # Generate embeddings
 
-uv run uvicorn codex.api.app:app --reload             # Run API server
+uv run uvicorn tome.api.app:app --reload             # Run API server
 ```
 
 ## What This Is
@@ -24,7 +24,7 @@ A historical document indexing and search system. Ingests PDFs/TXT files, chunks
 ## Project Structure
 
 ```
-src/codex/                  # Main package (src layout)
+src/tome/                  # Main package (src layout)
   config.py                 # Pydantic BaseSettings configuration
   models.py                 # Shared Pydantic data models
   documents.py              # Document management CLI + logic
@@ -59,9 +59,9 @@ docs/                       # Design docs and guides
 
 - **Package management**: use `uv`, not pip or poetry
 - **Testing**: pytest with `unittest.mock` for external services. Tests must run without Postgres/Meilisearch/OpenAI
-- **Configuration**: Pydantic `BaseSettings` in `codex.config.Settings`, loaded from env vars and `.env`
-- `answer_generator.py` uses lazy loading via `_get_client()` -- tests patch `codex.search.answer_generator._get_client`
-- `entities.py` uses lazy loading via `_get_nlp()` for spaCy -- tests patch `codex.ingestion.entities._get_nlp`
+- **Configuration**: Pydantic `BaseSettings` in `tome.config.Settings`, loaded from env vars and `.env`
+- `answer_generator.py` uses lazy loading via `_get_client()` -- tests patch `tome.search.answer_generator._get_client`
+- `entities.py` uses lazy loading via `_get_nlp()` for spaCy -- tests patch `tome.ingestion.entities._get_nlp`
 
 ## External Services
 

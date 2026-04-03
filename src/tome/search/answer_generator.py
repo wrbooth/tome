@@ -7,7 +7,7 @@ import logging
 from collections.abc import Generator
 from typing import Any
 
-from codex.config import ANSWER_MODEL, get_openai_client
+from tome.config import ANSWER_MODEL, get_openai_client
 
 logger = logging.getLogger(__name__)
 
@@ -335,7 +335,7 @@ if __name__ == "__main__":
         }
     ]
 
-    from codex.config import configure_logging
+    from tome.config import configure_logging
 
     configure_logging()
     result = answer_query(test_query, test_chunks)

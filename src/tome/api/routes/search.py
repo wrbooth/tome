@@ -7,10 +7,10 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from codex.config import db_connection
-from codex.models import QueryAnalysisInfo, QueryEntities
-from codex.search.answer_generator import stream_answer_with_llm
-from codex.search.search import (
+from tome.config import db_connection
+from tome.models import QueryAnalysisInfo, QueryEntities
+from tome.search.answer_generator import stream_answer_with_llm
+from tome.search.search import (
     analyze_query,
     get_passage_details,
     hybrid_search,

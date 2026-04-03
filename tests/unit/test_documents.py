@@ -4,14 +4,14 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from codex.documents import (
+from tests.unit.conftest import make_mock_db_connection
+from tome.documents import (
     cli,
     delete_document,
     get_document_stats,
     list_documents,
     reindex_document_meilisearch,
 )
-from tests.unit.conftest import make_mock_db_connection
 
 # ── get_document_stats ────────────────────────────────────────────────────
 
@@ -120,7 +120,7 @@ class TestDeleteDocument:
             {"title": "Doc"},  # doc info
             (5,),  # passage count (fetchone()[0])
         ]
-        with patch("codex.documents.click.confirm", return_value=False):
+        with patch("tome.documents.click.confirm", return_value=False):
             result = delete_document(mock_db_conn, "doc-1", confirm=True)
             assert result is False
 
@@ -132,7 +132,7 @@ class TestDeleteDocument:
             (5,),  # passage count
         ]
         cursor.rowcount = 1
-        with patch("codex.documents.click.confirm", return_value=True):
+        with patch("tome.documents.click.confirm", return_value=True):
             result = delete_document(mock_db_conn, "doc-1", confirm=True)
             assert result is True
 
@@ -159,8 +159,8 @@ class TestReindexDocumentMeilisearch:
             },
         ]
         with (
-            patch("codex.documents.get_meili_client", return_value=mock_meili_client),
-            patch("codex.ingestion.ingest.extract_entities_and_years", return_value=([], [1865])),
+            patch("tome.documents.get_meili_client", return_value=mock_meili_client),
+            patch("tome.ingestion.ingest.extract_entities_and_years", return_value=([], [1865])),
         ):
             result = reindex_document_meilisearch(mock_db_conn, "doc-1")
             assert result is True
@@ -179,9 +179,9 @@ class TestReindexDocumentMeilisearch:
         ]
         with (
             patch(
-                "codex.documents.get_meili_client", side_effect=Exception("Connection error")
+                "tome.documents.get_meili_client", side_effect=Exception("Connection error")
             ),
-            patch("codex.ingestion.ingest.extract_entities_and_years", return_value=([], [])),
+            patch("tome.ingestion.ingest.extract_entities_and_years", return_value=([], [])),
         ):
             result = reindex_document_meilisearch(mock_db_conn, "doc-1")
             assert result is False
@@ -215,7 +215,7 @@ class TestListCliCommand:
         ]
         mock_conn = self._mock_conn_with_docs(docs)
         runner = CliRunner()
-        with patch("codex.documents.db_connection", make_mock_db_connection(mock_conn)):
+        with patch("tome.documents.db_connection", make_mock_db_connection(mock_conn)):
             result = runner.invoke(cli, ["list", "--format", "json"])
             assert result.exit_code == 0
             assert "Doc A" in result.output
@@ -235,7 +235,7 @@ class TestListCliCommand:
         ]
         mock_conn = self._mock_conn_with_docs(docs)
         runner = CliRunner()
-        with patch("codex.documents.db_connection", make_mock_db_connection(mock_conn)):
+        with patch("tome.documents.db_connection", make_mock_db_connection(mock_conn)):
             result = runner.invoke(cli, ["list"])
             assert result.exit_code == 0
             assert "Doc A" in result.output
@@ -243,13 +243,13 @@ class TestListCliCommand:
     def test_list_empty(self):
         mock_conn = self._mock_conn_with_docs([])
         runner = CliRunner()
-        with patch("codex.documents.db_connection", make_mock_db_connection(mock_conn)):
+        with patch("tome.documents.db_connection", make_mock_db_connection(mock_conn)):
             result = runner.invoke(cli, ["list"])
             assert "No documents found" in result.output
 
     def test_list_error(self):
         runner = CliRunner()
-        with patch("codex.documents.db_connection", side_effect=Exception("DB error")):
+        with patch("tome.documents.db_connection", side_effect=Exception("DB error")):
             result = runner.invoke(cli, ["list"])
             assert result.exit_code == 1
 
@@ -278,7 +278,7 @@ class TestInfoCliCommand:
         ]
         mock_conn.cursor.return_value = cursor
         runner = CliRunner()
-        with patch("codex.documents.db_connection", make_mock_db_connection(mock_conn)):
+        with patch("tome.documents.db_connection", make_mock_db_connection(mock_conn)):
             result = runner.invoke(cli, ["info", "d1", "--format", "json"])
             assert result.exit_code == 0
             assert "Doc" in result.output
@@ -303,7 +303,7 @@ class TestInfoCliCommand:
         ]
         mock_conn.cursor.return_value = cursor
         runner = CliRunner()
-        with patch("codex.documents.db_connection", make_mock_db_connection(mock_conn)):
+        with patch("tome.documents.db_connection", make_mock_db_connection(mock_conn)):
             result = runner.invoke(cli, ["info", "d1"])
             assert result.exit_code == 0
             assert "Doc Title" in result.output
@@ -317,7 +317,7 @@ class TestInfoCliCommand:
         cursor.fetchone.return_value = None
         mock_conn.cursor.return_value = cursor
         runner = CliRunner()
-        with patch("codex.documents.db_connection", make_mock_db_connection(mock_conn)):
+        with patch("tome.documents.db_connection", make_mock_db_connection(mock_conn)):
             result = runner.invoke(cli, ["info", "nonexistent"])
             assert result.exit_code == 1
 
@@ -334,7 +334,7 @@ class TestDeleteCliCommand:
         cursor.rowcount = 1
         mock_conn.cursor.return_value = cursor
         runner = CliRunner()
-        with patch("codex.documents.db_connection", make_mock_db_connection(mock_conn)):
+        with patch("tome.documents.db_connection", make_mock_db_connection(mock_conn)):
             result = runner.invoke(cli, ["delete", "doc-1", "--force"])
             assert result.exit_code == 0
 
@@ -346,7 +346,7 @@ class TestDeleteCliCommand:
         cursor.execute.side_effect = Exception("DB error")
         mock_conn.cursor.return_value = cursor
         runner = CliRunner()
-        with patch("codex.documents.db_connection", make_mock_db_connection(mock_conn)):
+        with patch("tome.documents.db_connection", make_mock_db_connection(mock_conn)):
             result = runner.invoke(cli, ["delete", "doc-1", "--force"])
             assert result.exit_code == 1
 
@@ -359,8 +359,8 @@ class TestReindexCliCommand:
         mock_conn = MagicMock()
         runner = CliRunner()
         with (
-            patch("codex.documents.db_connection", make_mock_db_connection(mock_conn)),
-            patch("codex.documents.reindex_document_meilisearch", return_value=True),
+            patch("tome.documents.db_connection", make_mock_db_connection(mock_conn)),
+            patch("tome.documents.reindex_document_meilisearch", return_value=True),
         ):
             result = runner.invoke(cli, ["reindex", "doc-1"])
             assert result.exit_code == 0
@@ -369,8 +369,8 @@ class TestReindexCliCommand:
         mock_conn = MagicMock()
         runner = CliRunner()
         with (
-            patch("codex.documents.db_connection", make_mock_db_connection(mock_conn)),
-            patch("codex.documents.reindex_document_meilisearch", return_value=False),
+            patch("tome.documents.db_connection", make_mock_db_connection(mock_conn)),
+            patch("tome.documents.reindex_document_meilisearch", return_value=False),
         ):
             result = runner.invoke(cli, ["reindex", "doc-1"])
             assert result.exit_code == 1
@@ -394,7 +394,7 @@ class TestStatsCliCommand:
         ]
         mock_conn.cursor.return_value = cursor
         runner = CliRunner()
-        with patch("codex.documents.db_connection", make_mock_db_connection(mock_conn)):
+        with patch("tome.documents.db_connection", make_mock_db_connection(mock_conn)):
             result = runner.invoke(cli, ["stats"])
             assert result.exit_code == 0
             assert "Documents: 10" in result.output
@@ -409,13 +409,13 @@ class TestStatsCliCommand:
         cursor.fetchone.side_effect = [(0,), (0,), (0,), (0,), (0,)]
         mock_conn.cursor.return_value = cursor
         runner = CliRunner()
-        with patch("codex.documents.db_connection", make_mock_db_connection(mock_conn)):
+        with patch("tome.documents.db_connection", make_mock_db_connection(mock_conn)):
             result = runner.invoke(cli, ["stats"])
             assert result.exit_code == 0
             # Should not show embedding coverage when 0 passages
 
     def test_stats_error(self):
         runner = CliRunner()
-        with patch("codex.documents.db_connection", side_effect=Exception("DB error")):
+        with patch("tome.documents.db_connection", side_effect=Exception("DB error")):
             result = runner.invoke(cli, ["stats"])
             assert result.exit_code == 1

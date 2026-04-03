@@ -2,9 +2,9 @@
     'use strict';
 
     // ── Shared state ─────────────────────────────────────────────────────
-    window.Codex = window.Codex || {};
-    window.Codex.activeDocumentId = null;
-    window.Codex.activeDocumentTitle = null;
+    window.Tome = window.Tome || {};
+    window.Tome.activeDocumentId = null;
+    window.Tome.activeDocumentTitle = null;
 
     // ── DOM refs ─────────────────────────────────────────────────────────
     var sidebar = document.getElementById('sidebar');
@@ -43,7 +43,7 @@
             sidebar.classList.add('collapsed');
             sidebarToggle.title = 'Show sidebar';
         }
-        localStorage.setItem('codex-sidebar-open', open ? '1' : '0');
+        localStorage.setItem('tome-sidebar-open', open ? '1' : '0');
     }
 
     sidebarToggle.addEventListener('click', function () {
@@ -51,7 +51,7 @@
     });
 
     // Restore sidebar state from localStorage (default: open)
-    var savedState = localStorage.getItem('codex-sidebar-open');
+    var savedState = localStorage.getItem('tome-sidebar-open');
     if (savedState === '0') {
         setSidebarOpen(false);
     }
@@ -103,7 +103,7 @@
         var html = '';
         for (var i = 0; i < filtered.length; i++) {
             var d = filtered[i];
-            var isActive = window.Codex.activeDocumentId === d.id;
+            var isActive = window.Tome.activeDocumentId === d.id;
             var activeClass = isActive
                 ? 'border-l-3 border-l-blue-500 bg-blue-50'
                 : 'border-l-3 border-l-transparent hover:bg-slate-50';
@@ -153,7 +153,7 @@
         var doc = documents.find(function (d) { return d.id === docId; });
         if (!doc) return;
 
-        if (window.Codex.activeDocumentId === docId) {
+        if (window.Tome.activeDocumentId === docId) {
             clearDocumentFilter();
         } else {
             setDocumentFilter(docId, doc.title);
@@ -161,26 +161,26 @@
     }
 
     function setDocumentFilter(docId, title) {
-        window.Codex.activeDocumentId = docId;
-        window.Codex.activeDocumentTitle = title;
+        window.Tome.activeDocumentId = docId;
+        window.Tome.activeDocumentTitle = title;
         renderFilterChip();
         renderDocumentList(docSearch.value.trim());
     }
 
     function clearDocumentFilter() {
-        window.Codex.activeDocumentId = null;
-        window.Codex.activeDocumentTitle = null;
+        window.Tome.activeDocumentId = null;
+        window.Tome.activeDocumentTitle = null;
         renderFilterChip();
         renderDocumentList(docSearch.value.trim());
     }
 
     // Expose for app.js (New Chat)
-    window.Codex.clearDocumentFilter = clearDocumentFilter;
+    window.Tome.clearDocumentFilter = clearDocumentFilter;
 
     // ── Filter chip ──────────────────────────────────────────────────────
 
     function renderFilterChip() {
-        if (!window.Codex.activeDocumentId) {
+        if (!window.Tome.activeDocumentId) {
             activeFilters.classList.add('hidden');
             activeFilters.innerHTML = '';
             return;
@@ -194,7 +194,7 @@
                     '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" ' +
                         'd="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>' +
                 '</svg>' +
-                '<span class="truncate">' + escapeHtml(window.Codex.activeDocumentTitle) + '</span>' +
+                '<span class="truncate">' + escapeHtml(window.Tome.activeDocumentTitle) + '</span>' +
                 '<button id="clear-filter-btn" class="ml-0.5 hover:text-blue-900 shrink-0 text-lg leading-none" title="Remove filter">&times;</button>' +
             '</span>';
 
@@ -253,7 +253,7 @@
         var pageRange = (pages.min_page != null && pages.max_page != null)
             ? pages.min_page + '–' + pages.max_page
             : 'N/A';
-        var isActive = window.Codex.activeDocumentId === doc.id;
+        var isActive = window.Tome.activeDocumentId === doc.id;
 
         docList.innerHTML =
             '<div class="p-4 space-y-4">' +
@@ -303,7 +303,7 @@
         });
         docList.querySelector('.detail-filter-btn').addEventListener('click', function () {
             var id = this.getAttribute('data-doc-id');
-            if (window.Codex.activeDocumentId === id) {
+            if (window.Tome.activeDocumentId === id) {
                 clearDocumentFilter();
             } else {
                 setDocumentFilter(id, doc.title);
@@ -331,7 +331,7 @@
             }
 
             // Clear filter if we just deleted the active document
-            if (window.Codex.activeDocumentId === docId) {
+            if (window.Tome.activeDocumentId === docId) {
                 clearDocumentFilter();
             }
 

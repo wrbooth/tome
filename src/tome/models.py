@@ -1,5 +1,5 @@
 """
-Pydantic models for the Codex project.
+Pydantic models for the Tome project.
 
 Shared data models used across the ingestion pipeline, search, and API layers.
 These models define the canonical shapes for chunks, search results, documents,

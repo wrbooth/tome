@@ -3,8 +3,8 @@
 import json
 from unittest.mock import MagicMock, patch
 
-from codex.search.search import format_results
 from tests.unit.conftest import make_mock_db_connection
+from tome.search.search import format_results
 
 # ── format_results ────────────────────────────────────────────────────────
 
@@ -61,24 +61,24 @@ class TestFormatResults:
 
 class TestAnalyzeQuery:
     def test_successful_analysis(self, mock_openai_client):
-        from codex.search.search import analyze_query
+        from tome.search.search import analyze_query
 
-        with patch("codex.search.search.get_openai_client", return_value=mock_openai_client):
+        with patch("tome.search.search.get_openai_client", return_value=mock_openai_client):
             result = analyze_query("Who founded Cambridge?")
             assert "query_type" in result
             assert "expansions" in result
 
     def test_api_error_returns_defaults(self):
-        from codex.search.search import analyze_query
+        from tome.search.search import analyze_query
 
-        with patch("codex.search.search.get_openai_client", side_effect=Exception("API down")):
+        with patch("tome.search.search.get_openai_client", side_effect=Exception("API down")):
             result = analyze_query("test query")
             assert result["query_type"] == "general"
             assert result["person"] is None
             assert "test query" in result["expansions"]
 
     def test_person_normalization_empty_string(self, mock_openai_client):
-        from codex.search.search import analyze_query
+        from tome.search.search import analyze_query
 
         # Set person to empty string in response
         response_data = json.loads(
@@ -90,12 +90,12 @@ class TestAnalyzeQuery:
         mock_openai_client.chat.completions.create.return_value.choices[
             0
         ].message.content = json.dumps(response_data)
-        with patch("codex.search.search.get_openai_client", return_value=mock_openai_client):
+        with patch("tome.search.search.get_openai_client", return_value=mock_openai_client):
             result = analyze_query("What happened?")
             assert result["person"] is None
 
     def test_person_normalization_none_string(self, mock_openai_client):
-        from codex.search.search import analyze_query
+        from tome.search.search import analyze_query
 
         response_data = json.loads(
             mock_openai_client.chat.completions.create.return_value.choices[
@@ -106,19 +106,19 @@ class TestAnalyzeQuery:
         mock_openai_client.chat.completions.create.return_value.choices[
             0
         ].message.content = json.dumps(response_data)
-        with patch("codex.search.search.get_openai_client", return_value=mock_openai_client):
+        with patch("tome.search.search.get_openai_client", return_value=mock_openai_client):
             result = analyze_query("What?")
             assert result["person"] is None
 
     def test_original_query_prepended_to_expansions(self, mock_openai_client):
-        from codex.search.search import analyze_query
+        from tome.search.search import analyze_query
 
-        with patch("codex.search.search.get_openai_client", return_value=mock_openai_client):
+        with patch("tome.search.search.get_openai_client", return_value=mock_openai_client):
             result = analyze_query("Who was George Washington?")
             assert result["expansions"][0] == "Who was George Washington?"
 
     def test_expansions_limited_to_15(self, mock_openai_client):
-        from codex.search.search import analyze_query
+        from tome.search.search import analyze_query
 
         response_data = json.loads(
             mock_openai_client.chat.completions.create.return_value.choices[
@@ -129,7 +129,7 @@ class TestAnalyzeQuery:
         mock_openai_client.chat.completions.create.return_value.choices[
             0
         ].message.content = json.dumps(response_data)
-        with patch("codex.search.search.get_openai_client", return_value=mock_openai_client):
+        with patch("tome.search.search.get_openai_client", return_value=mock_openai_client):
             result = analyze_query("test")
             assert len(result["expansions"]) <= 15
 
@@ -139,17 +139,17 @@ class TestAnalyzeQuery:
 
 class TestHybridSearch:
     def test_returns_id_score_tuples(self, mock_meili_client):
-        from codex.search.search import hybrid_search
+        from tome.search.search import hybrid_search
 
-        with patch("codex.search.search.get_meili_client", return_value=mock_meili_client):
+        with patch("tome.search.search.get_meili_client", return_value=mock_meili_client):
             results = hybrid_search("test query")
             assert len(results) == 2
             assert results[0] == ("passage-1", 0.95)
 
     def test_with_document_id_filter(self, mock_meili_client):
-        from codex.search.search import hybrid_search
+        from tome.search.search import hybrid_search
 
-        with patch("codex.search.search.get_meili_client", return_value=mock_meili_client):
+        with patch("tome.search.search.get_meili_client", return_value=mock_meili_client):
             test_uuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
             hybrid_search("test", document_id=test_uuid)
             mock_meili_client.index("passages").search.assert_called()
@@ -165,10 +165,10 @@ class TestHybridSearch:
             )
 
     def test_error_returns_empty_list(self):
-        from codex.search.search import hybrid_search
+        from tome.search.search import hybrid_search
 
         with patch(
-            "codex.search.search.get_meili_client", side_effect=Exception("Connection refused")
+            "tome.search.search.get_meili_client", side_effect=Exception("Connection refused")
         ):
             results = hybrid_search("test")
             assert results == []
@@ -179,13 +179,13 @@ class TestHybridSearch:
 
 class TestRerankCandidates:
     def test_empty_candidates_returns_empty(self, mock_db_conn):
-        from codex.search.search import rerank_candidates
+        from tome.search.search import rerank_candidates
 
         result = rerank_candidates([], "query", mock_db_conn)
         assert result == []
 
     def test_reranks_and_returns_top_k(self, mock_db_conn):
-        from codex.search.search import rerank_candidates
+        from tome.search.search import rerank_candidates
 
         mock_cursor = mock_db_conn.cursor.return_value.__enter__.return_value
         mock_cursor.fetchall.return_value = [
@@ -196,7 +196,7 @@ class TestRerankCandidates:
         mock_reranker = MagicMock()
         mock_reranker.predict.return_value = [0.9, 0.3]
 
-        with patch("codex.search.search._get_reranker", return_value=mock_reranker):
+        with patch("tome.search.search._get_reranker", return_value=mock_reranker):
             candidates = [("p1", 0.5), ("p2", 0.5)]
             result = rerank_candidates(candidates, "query", mock_db_conn, k=1)
             assert len(result) == 1
@@ -208,13 +208,13 @@ class TestRerankCandidates:
 
 class TestGetPassageDetails:
     def test_empty_list(self, mock_db_conn):
-        from codex.search.search import get_passage_details
+        from tome.search.search import get_passage_details
 
         result = get_passage_details(mock_db_conn, [])
         assert result == []
 
     def test_preserves_order(self, mock_db_conn):
-        from codex.search.search import get_passage_details
+        from tome.search.search import get_passage_details
 
         mock_cursor = mock_db_conn.cursor.return_value.__enter__.return_value
         mock_cursor.fetchall.return_value = [
@@ -243,32 +243,32 @@ class TestGetPassageDetails:
 
 class TestSearchCodex:
     def test_no_candidates_returns_empty(self):
-        from codex.search.search import search_codex
+        from tome.search.search import search_codex
 
         with (
             patch(
-                "codex.search.search.analyze_query",
+                "tome.search.search.analyze_query",
                 return_value={"query_type": "general", "expansions": ["q"]},
             ),
-            patch("codex.search.search.hybrid_search", return_value=[]),
+            patch("tome.search.search.hybrid_search", return_value=[]),
         ):
             result = search_codex("test query")
             assert result["results"] == []
             assert "No candidates" in result["answer"]
 
     def test_full_pipeline(self, mock_db_conn):
-        from codex.search.search import search_codex
+        from tome.search.search import search_codex
 
         with (
             patch(
-                "codex.search.search.analyze_query",
+                "tome.search.search.analyze_query",
                 return_value={"query_type": "factoid", "expansions": ["q"]},
             ),
-            patch("codex.search.search.hybrid_search", return_value=[("p1", 0.9)]),
-            patch("codex.search.search.db_connection", make_mock_db_connection(mock_db_conn)),
-            patch("codex.search.search.rerank_candidates", return_value=[("p1", 0.95)]),
+            patch("tome.search.search.hybrid_search", return_value=[("p1", 0.9)]),
+            patch("tome.search.search.db_connection", make_mock_db_connection(mock_db_conn)),
+            patch("tome.search.search.rerank_candidates", return_value=[("p1", 0.95)]),
             patch(
-                "codex.search.search.get_passage_details",
+                "tome.search.search.get_passage_details",
                 return_value=[
                     {
                         "id": "p1",
@@ -279,7 +279,7 @@ class TestSearchCodex:
                     }
                 ],
             ),
-            patch("codex.search.search.generate_answer", return_value="The answer."),
+            patch("tome.search.search.generate_answer", return_value="The answer."),
         ):
             result = search_codex("What happened?")
             assert result["query_type"] == "factoid"

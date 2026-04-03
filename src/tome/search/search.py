@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Codex Search Script
+Tome Search Script
 
 Implements hybrid search via Meilisearch with cross-encoder re-ranking.
 """
@@ -13,7 +13,7 @@ from typing import Any
 import click
 from psycopg2.extras import RealDictCursor
 
-from codex.config import (
+from tome.config import (
     QUERY_ANALYSIS_MODEL,
     RERANKER_MODEL,
     configure_logging,
@@ -365,7 +365,7 @@ def generate_answer(query: str, results: list[dict[str, Any]]) -> str:
         return "I couldn't find any relevant information to answer your question."
 
     try:
-        from codex.search.answer_generator import answer_query
+        from tome.search.answer_generator import answer_query
 
         return answer_query(query, results)
     except Exception:

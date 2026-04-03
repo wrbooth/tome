@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Codex Document Ingestion Script
+Tome Document Ingestion Script
 
 Handles PDF/TXT ingestion, text extraction, chunking, and database storage.
 
@@ -15,23 +15,23 @@ from pathlib import Path
 import click
 import fitz  # noqa: F401 — kept for backward compat (tests patch ingest.fitz)
 
-from codex.config import configure_logging
+from tome.config import configure_logging
 
 logger = logging.getLogger(__name__)
 
-from codex.config import (  # noqa: F401 — re-export for patch compat
+from tome.config import (  # noqa: F401 — re-export for patch compat
     db_connection,
     get_db_connection,
     get_meili_client,
 )
-from codex.ingestion.chunking import (  # noqa: F401
+from tome.ingestion.chunking import (  # noqa: F401
     chunk_text_with_headings,
     count_tokens,
 )
-from codex.ingestion.entities import extract_entities_and_years  # noqa: F401
+from tome.ingestion.entities import extract_entities_and_years  # noqa: F401
 
 # Re-export all public functions for backward compatibility
-from codex.ingestion.heading_detection import (  # noqa: F401
+from tome.ingestion.heading_detection import (  # noqa: F401
     debug_headings,
     detect_heading_patterns,
     detect_heading_patterns_from_file,
@@ -45,11 +45,11 @@ from codex.ingestion.heading_detection import (  # noqa: F401
     merge_heading_results,
     rank_headings_by_relevance,
 )
-from codex.ingestion.pdf_extraction import (
+from tome.ingestion.pdf_extraction import (
     extract_text_from_txt,
     extract_text_with_font_info,
 )
-from codex.ingestion.storage import index_in_meilisearch, store_document, store_passages
+from tome.ingestion.storage import index_in_meilisearch, store_document, store_passages
 
 
 def ingest_document(
@@ -60,7 +60,7 @@ def ingest_document(
     debug: bool = False,
 ) -> str:
     """
-    Ingest a document into the Codex system. Returns the document ID.
+    Ingest a document into the Tome system. Returns the document ID.
 
     Can be called directly from Python (e.g. batch_reingest) or via the CLI.
     """
@@ -116,7 +116,7 @@ def ingest_document(
     "--debug", is_flag=True, help="Show debug information for heading detection"
 )
 def main(file_path: str, title: str, authors: str, pub_year: int, debug: bool):
-    """Ingest a document (PDF or TXT) into the Codex system."""
+    """Ingest a document (PDF or TXT) into the Tome system."""
     configure_logging(logging.DEBUG if debug else logging.INFO)
     try:
         ingest_document(file_path, title, authors, pub_year, debug)

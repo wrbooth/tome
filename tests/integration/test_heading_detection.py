@@ -6,7 +6,7 @@ Test script for heading detection functionality.
 import sys
 from pathlib import Path
 
-from codex.ingestion.ingest import (
+from tome.ingestion.ingest import (
     chunk_text_with_headings,
     debug_headings,
     detect_heading_patterns,

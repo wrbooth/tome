@@ -1,5 +1,5 @@
 """
-Database and search index storage for the Codex ingestion pipeline.
+Database and search index storage for the Tome ingestion pipeline.
 
 Handles storing documents and passages in PostgreSQL, and indexing
 passages in Meilisearch.
@@ -11,8 +11,8 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-from codex.config import EMBEDDING_MODEL, get_meili_client, settings
-from codex.ingestion.entities import extract_entities_and_years
+from tome.config import EMBEDDING_MODEL, get_meili_client, settings
+from tome.ingestion.entities import extract_entities_and_years
 
 
 def store_document(
@@ -134,8 +134,8 @@ def index_in_meilisearch(
 
         # Check if index exists; if not, configure embedder and filterable attributes
         try:
-            settings = index.get_settings()
-            needs_setup = not settings.get("embedders")
+            index_settings = index.get_settings()
+            needs_setup = not index_settings.get("embedders")
         except Exception:
             needs_setup = True
 

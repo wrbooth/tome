@@ -49,7 +49,7 @@ class TestHealthEndpoint:
     def test_returns_healthy(self):
         from fastapi.testclient import TestClient
 
-        from codex.api.app import app
+        from tome.api.app import app
 
         client = TestClient(app)
         response = client.get("/api/health")
@@ -64,10 +64,10 @@ class TestSearchEndpoint:
     def test_successful_search(self):
         from fastapi.testclient import TestClient
 
-        from codex.api.app import app
+        from tome.api.app import app
 
         mock_result = _make_search_result()
-        with patch("codex.api.routes.search.search_codex", return_value=mock_result):
+        with patch("tome.api.routes.search.search_codex", return_value=mock_result):
             client = TestClient(app)
             response = client.post("/api/search", json={"query": "What happened?"})
             assert response.status_code == 200
@@ -80,10 +80,10 @@ class TestSearchEndpoint:
     def test_search_returns_full_text_and_headings(self):
         from fastapi.testclient import TestClient
 
-        from codex.api.app import app
+        from tome.api.app import app
 
         mock_result = _make_search_result()
-        with patch("codex.api.routes.search.search_codex", return_value=mock_result):
+        with patch("tome.api.routes.search.search_codex", return_value=mock_result):
             client = TestClient(app)
             response = client.post("/api/search", json={"query": "test"})
             result = response.json()["results"][0]
@@ -93,7 +93,7 @@ class TestSearchEndpoint:
     def test_search_returns_query_analysis(self):
         from fastapi.testclient import TestClient
 
-        from codex.api.app import app
+        from tome.api.app import app
 
         mock_result = _make_search_result()
         mock_result["query_analysis"]["person"] = "John Smith"
@@ -101,7 +101,7 @@ class TestSearchEndpoint:
             "who is John Smith",
             "John Smith history",
         ]
-        with patch("codex.api.routes.search.search_codex", return_value=mock_result):
+        with patch("tome.api.routes.search.search_codex", return_value=mock_result):
             client = TestClient(app)
             response = client.post("/api/search", json={"query": "Who is John Smith?"})
             data = response.json()
@@ -113,7 +113,7 @@ class TestSearchEndpoint:
     def test_snippet_truncation(self):
         from fastapi.testclient import TestClient
 
-        from codex.api.app import app
+        from tome.api.app import app
 
         long_text = "x" * 300
         mock_result = _make_search_result(
@@ -128,7 +128,7 @@ class TestSearchEndpoint:
                 }
             ]
         )
-        with patch("codex.api.routes.search.search_codex", return_value=mock_result):
+        with patch("tome.api.routes.search.search_codex", return_value=mock_result):
             client = TestClient(app)
             response = client.post("/api/search", json={"query": "test"})
             result = response.json()["results"][0]
@@ -139,9 +139,9 @@ class TestSearchEndpoint:
     def test_search_error_returns_500(self):
         from fastapi.testclient import TestClient
 
-        from codex.api.app import app
+        from tome.api.app import app
 
-        with patch("codex.api.routes.search.search_codex", side_effect=Exception("Search failed")):
+        with patch("tome.api.routes.search.search_codex", side_effect=Exception("Search failed")):
             client = TestClient(app)
             response = client.post("/api/search", json={"query": "test"})
             assert response.status_code == 500
@@ -150,7 +150,7 @@ class TestSearchEndpoint:
         """Backwards compat: search_codex result without query_analysis key."""
         from fastapi.testclient import TestClient
 
-        from codex.api.app import app
+        from tome.api.app import app
 
         mock_result = {
             "query_type": "general",
@@ -166,7 +166,7 @@ class TestSearchEndpoint:
                 }
             ],
         }
-        with patch("codex.api.routes.search.search_codex", return_value=mock_result):
+        with patch("tome.api.routes.search.search_codex", return_value=mock_result):
             client = TestClient(app)
             response = client.post("/api/search", json={"query": "test"})
             assert response.status_code == 200
@@ -180,7 +180,7 @@ class TestSearchStreamEndpoint:
     def test_stream_returns_sse_events(self):
         from fastapi.testclient import TestClient
 
-        from codex.api.app import app
+        from tome.api.app import app
 
         mock_analysis = {
             "query_type": "general",
@@ -209,15 +209,15 @@ class TestSearchStreamEndpoint:
         ]
 
         with (
-            patch("codex.api.routes.search.analyze_query", return_value=mock_analysis),
-            patch("codex.api.routes.search.hybrid_search", return_value=[("p1", 0.9)]),
-            patch("codex.api.routes.search.rerank_candidates", return_value=[("p1", 0.9)]),
-            patch("codex.api.routes.search.get_passage_details", return_value=mock_details),
+            patch("tome.api.routes.search.analyze_query", return_value=mock_analysis),
+            patch("tome.api.routes.search.hybrid_search", return_value=[("p1", 0.9)]),
+            patch("tome.api.routes.search.rerank_candidates", return_value=[("p1", 0.9)]),
+            patch("tome.api.routes.search.get_passage_details", return_value=mock_details),
             patch(
-                "codex.api.routes.search.stream_answer_with_llm",
+                "tome.api.routes.search.stream_answer_with_llm",
                 return_value=iter(["Hello", " world"]),
             ),
-            patch("codex.api.routes.search.db_connection", make_mock_db_connection(MagicMock())),
+            patch("tome.api.routes.search.db_connection", make_mock_db_connection(MagicMock())),
         ):
             client = TestClient(app)
             response = client.post(
@@ -238,7 +238,7 @@ class TestSearchStreamEndpoint:
     def test_stream_no_candidates(self):
         from fastapi.testclient import TestClient
 
-        from codex.api.app import app
+        from tome.api.app import app
 
         mock_analysis = {
             "query_type": "general",
@@ -257,8 +257,8 @@ class TestSearchStreamEndpoint:
         }
 
         with (
-            patch("codex.api.routes.search.analyze_query", return_value=mock_analysis),
-            patch("codex.api.routes.search.hybrid_search", return_value=[]),
+            patch("tome.api.routes.search.analyze_query", return_value=mock_analysis),
+            patch("tome.api.routes.search.hybrid_search", return_value=[]),
         ):
             client = TestClient(app)
             response = client.post(
@@ -280,7 +280,7 @@ class TestDocumentsEndpoint:
     def test_list_documents(self):
         from fastapi.testclient import TestClient
 
-        from codex.api.app import app
+        from tome.api.app import app
 
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
@@ -297,7 +297,7 @@ class TestDocumentsEndpoint:
         ]
         mock_conn.cursor.return_value = mock_cursor
 
-        with patch("codex.api.routes.documents.db_connection", make_mock_db_connection(mock_conn)):
+        with patch("tome.api.routes.documents.db_connection", make_mock_db_connection(mock_conn)):
             client = TestClient(app)
             response = client.get("/api/documents")
             assert response.status_code == 200
@@ -306,9 +306,9 @@ class TestDocumentsEndpoint:
     def test_documents_error_returns_500(self):
         from fastapi.testclient import TestClient
 
-        from codex.api.app import app
+        from tome.api.app import app
 
-        with patch("codex.api.routes.documents.db_connection", side_effect=Exception("DB down")):
+        with patch("tome.api.routes.documents.db_connection", side_effect=Exception("DB down")):
             client = TestClient(app)
             response = client.get("/api/documents")
             assert response.status_code == 500
@@ -321,7 +321,7 @@ class TestDocumentDetailEndpoint:
     def test_returns_document_stats(self):
         from fastapi.testclient import TestClient
 
-        from codex.api.app import app
+        from tome.api.app import app
 
         mock_stats = {
             "document": {
@@ -337,8 +337,8 @@ class TestDocumentDetailEndpoint:
             "pages": {"min_page": 1, "max_page": 80},
         }
         with (
-            patch("codex.api.routes.documents.db_connection", make_mock_db_connection(MagicMock())),
-            patch("codex.api.routes.documents.get_document_stats", return_value=mock_stats),
+            patch("tome.api.routes.documents.db_connection", make_mock_db_connection(MagicMock())),
+            patch("tome.api.routes.documents.get_document_stats", return_value=mock_stats),
         ):
             client = TestClient(app)
             response = client.get("/api/documents/d1")
@@ -351,11 +351,11 @@ class TestDocumentDetailEndpoint:
     def test_document_not_found(self):
         from fastapi.testclient import TestClient
 
-        from codex.api.app import app
+        from tome.api.app import app
 
         with (
-            patch("codex.api.routes.documents.db_connection", make_mock_db_connection(MagicMock())),
-            patch("codex.api.routes.documents.get_document_stats", return_value=None),
+            patch("tome.api.routes.documents.db_connection", make_mock_db_connection(MagicMock())),
+            patch("tome.api.routes.documents.get_document_stats", return_value=None),
         ):
             client = TestClient(app)
             response = client.get("/api/documents/nonexistent")
@@ -364,9 +364,9 @@ class TestDocumentDetailEndpoint:
     def test_document_detail_db_error(self):
         from fastapi.testclient import TestClient
 
-        from codex.api.app import app
+        from tome.api.app import app
 
-        with patch("codex.api.routes.documents.db_connection", side_effect=Exception("DB error")):
+        with patch("tome.api.routes.documents.db_connection", side_effect=Exception("DB error")):
             client = TestClient(app)
             response = client.get("/api/documents/d1")
             assert response.status_code == 500
@@ -379,7 +379,7 @@ class TestDeleteDocumentEndpoint:
     def test_deletes_document_successfully(self):
         from fastapi.testclient import TestClient
 
-        from codex.api.app import app
+        from tome.api.app import app
 
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
@@ -395,8 +395,8 @@ class TestDeleteDocumentEndpoint:
         mock_meili_client.index.return_value = mock_meili_index
 
         with (
-            patch("codex.api.routes.documents.db_connection", make_mock_db_connection(mock_conn)),
-            patch("codex.api.routes.documents.get_meili_client", return_value=mock_meili_client),
+            patch("tome.api.routes.documents.db_connection", make_mock_db_connection(mock_conn)),
+            patch("tome.api.routes.documents.get_meili_client", return_value=mock_meili_client),
         ):
             client = TestClient(app)
             response = client.delete(
@@ -410,7 +410,7 @@ class TestDeleteDocumentEndpoint:
     def test_delete_not_found(self):
         from fastapi.testclient import TestClient
 
-        from codex.api.app import app
+        from tome.api.app import app
 
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
@@ -421,8 +421,8 @@ class TestDeleteDocumentEndpoint:
         mock_cursor.fetchone.return_value = None
 
         with (
-            patch("codex.api.routes.documents.db_connection", make_mock_db_connection(mock_conn)),
-            patch("codex.api.routes.documents.get_meili_client", return_value=MagicMock()),
+            patch("tome.api.routes.documents.db_connection", make_mock_db_connection(mock_conn)),
+            patch("tome.api.routes.documents.get_meili_client", return_value=MagicMock()),
         ):
             client = TestClient(app)
             response = client.delete(
@@ -433,7 +433,7 @@ class TestDeleteDocumentEndpoint:
     def test_delete_invalid_id(self):
         from fastapi.testclient import TestClient
 
-        from codex.api.app import app
+        from tome.api.app import app
 
         client = TestClient(app)
         response = client.delete("/api/documents/not-a-uuid")
@@ -443,7 +443,7 @@ class TestDeleteDocumentEndpoint:
     def test_delete_succeeds_even_if_meili_fails(self):
         from fastapi.testclient import TestClient
 
-        from codex.api.app import app
+        from tome.api.app import app
 
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
@@ -459,8 +459,8 @@ class TestDeleteDocumentEndpoint:
         )
 
         with (
-            patch("codex.api.routes.documents.db_connection", make_mock_db_connection(mock_conn)),
-            patch("codex.api.routes.documents.get_meili_client", return_value=mock_meili_client),
+            patch("tome.api.routes.documents.db_connection", make_mock_db_connection(mock_conn)),
+            patch("tome.api.routes.documents.get_meili_client", return_value=mock_meili_client),
         ):
             client = TestClient(app)
             response = client.delete(
@@ -476,8 +476,8 @@ class TestUploadEndpoint:
     def test_upload_pdf_returns_202(self):
         from fastapi.testclient import TestClient
 
-        from codex.api.app import app
-        from codex.api.routes.upload import _ingest_tasks
+        from tome.api.app import app
+        from tome.api.routes.upload import _ingest_tasks
 
         _ingest_tasks.clear()
         client = TestClient(app)
@@ -496,8 +496,8 @@ class TestUploadEndpoint:
     def test_upload_txt_accepted(self):
         from fastapi.testclient import TestClient
 
-        from codex.api.app import app
-        from codex.api.routes.upload import _ingest_tasks
+        from tome.api.app import app
+        from tome.api.routes.upload import _ingest_tasks
 
         _ingest_tasks.clear()
         client = TestClient(app)
@@ -511,7 +511,7 @@ class TestUploadEndpoint:
     def test_upload_rejects_unsupported_type(self):
         from fastapi.testclient import TestClient
 
-        from codex.api.app import app
+        from tome.api.app import app
 
         client = TestClient(app)
         response = client.post(
@@ -529,8 +529,8 @@ class TestUploadStatusEndpoint:
     def test_returns_task_status(self):
         from fastapi.testclient import TestClient
 
-        from codex.api.app import app
-        from codex.api.routes.upload import _ingest_tasks
+        from tome.api.app import app
+        from tome.api.routes.upload import _ingest_tasks
 
         _ingest_tasks.clear()
         _ingest_tasks["task-123"] = {
@@ -549,8 +549,8 @@ class TestUploadStatusEndpoint:
     def test_task_not_found(self):
         from fastapi.testclient import TestClient
 
-        from codex.api.app import app
-        from codex.api.routes.upload import _ingest_tasks
+        from tome.api.app import app
+        from tome.api.routes.upload import _ingest_tasks
 
         _ingest_tasks.clear()
         client = TestClient(app)
@@ -565,7 +565,7 @@ class TestStatsEndpoint:
     def test_returns_stats(self):
         from fastapi.testclient import TestClient
 
-        from codex.api.app import app
+        from tome.api.app import app
 
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
@@ -580,7 +580,7 @@ class TestStatsEndpoint:
         ]
         mock_conn.cursor.return_value = mock_cursor
 
-        with patch("codex.api.routes.documents.db_connection", make_mock_db_connection(mock_conn)):
+        with patch("tome.api.routes.documents.db_connection", make_mock_db_connection(mock_conn)):
             client = TestClient(app)
             response = client.get("/api/stats")
             assert response.status_code == 200
@@ -594,7 +594,7 @@ class TestStatsEndpoint:
     def test_zero_passages_coverage(self):
         from fastapi.testclient import TestClient
 
-        from codex.api.app import app
+        from tome.api.app import app
 
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
@@ -609,7 +609,7 @@ class TestStatsEndpoint:
         ]
         mock_conn.cursor.return_value = mock_cursor
 
-        with patch("codex.api.routes.documents.db_connection", make_mock_db_connection(mock_conn)):
+        with patch("tome.api.routes.documents.db_connection", make_mock_db_connection(mock_conn)):
             client = TestClient(app)
             response = client.get("/api/stats")
             assert response.status_code == 200

@@ -1,5 +1,5 @@
 """
-Codex API Application
+Tome API Application
 
 FastAPI app with search, document management, and streaming endpoints.
 """
@@ -13,11 +13,11 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
-from codex.api.routes.documents import router as documents_router
-from codex.api.routes.search import router as search_router
-from codex.api.routes.upload import router as upload_router
+from tome.api.routes.documents import router as documents_router
+from tome.api.routes.search import router as search_router
+from tome.api.routes.upload import router as upload_router
 
-app = FastAPI(title="Codex Search API", version="2.0.0")
+app = FastAPI(title="Tome Search API", version="2.0.0")
 
 # CORS -- allow all origins during development
 app.add_middleware(

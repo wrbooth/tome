@@ -1,5 +1,5 @@
 """
-Text chunking for the Codex ingestion pipeline.
+Text chunking for the Tome ingestion pipeline.
 
 Splits extracted text into token-limited chunks while preserving
 heading hierarchy across pages.

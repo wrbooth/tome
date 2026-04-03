@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Codex Batch Document Ingestion Script
+Tome Batch Document Ingestion Script
 
 Handles ingestion of multiple documents with support for:
 - Directory processing (recursive)
@@ -20,8 +20,8 @@ from typing import Any
 import click
 from dotenv import load_dotenv
 
-from codex.config import configure_logging
-from codex.ingestion.ingest import ingest_document
+from tome.config import configure_logging
+from tome.ingestion.ingest import ingest_document
 
 logger = logging.getLogger(__name__)
 
@@ -207,7 +207,7 @@ def main(
     """Batch ingest multiple documents."""
     configure_logging(logging.DEBUG if debug else logging.INFO)
 
-    logger.info("=== Codex Batch Ingestion ===")
+    logger.info("=== Tome Batch Ingestion ===")
     logger.info("Input: %s", input_path)
     logger.info("Recursive: %s", recursive)
     logger.info("Parallel: %d", parallel)

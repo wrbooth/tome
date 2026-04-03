@@ -1,9 +1,9 @@
 [project]
-name = "codex"
+name = "tome"
 version = "0.1.0"
 description = "Indexing & Search POC for document ingestion and retrieval"
 authors = [
-    {name = "Codex Team"}
+    {name = "Tome Team"}
 ]
 readme = "README.md"
 requires-python = ">=3.10,<3.14"
@@ -28,19 +28,19 @@ dependencies = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/codex"]
+packages = ["src/tome"]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project.scripts]
-codex-ingest = "codex.ingestion.ingest:main"
-codex-batch-ingest = "codex.ingestion.batch_ingest:main"
-codex-batch-reingest = "codex.ingestion.batch_reingest:main"
-codex-search = "codex.search.search:main"
-codex-embed = "codex.search.embed:main"
-codex-documents = "codex.documents:cli"
+tome-ingest = "tome.ingestion.ingest:main"
+tome-batch-ingest = "tome.ingestion.batch_ingest:main"
+tome-batch-reingest = "tome.ingestion.batch_reingest:main"
+tome-search = "tome.search.search:main"
+tome-embed = "tome.search.embed:main"
+tome-documents = "tome.documents:cli"
 
 [tool.pytest.ini_options]
 testpaths = ["tests/unit", "tests/integration"]
@@ -65,7 +65,7 @@ max-complexity = 10
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S101", "S105", "S106", "S108", "SLF001", "FBT001", "FBT002", "EM101", "E501"]
-"src/codex/cli/**/*.py" = ["T201"]
+"src/tome/cli/**/*.py" = ["T201"]
 
 [tool.mypy]
 python_version = "3.10"

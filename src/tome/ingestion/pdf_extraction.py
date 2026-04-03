@@ -1,5 +1,5 @@
 """
-PDF and text file extraction for the Codex ingestion pipeline.
+PDF and text file extraction for the Tome ingestion pipeline.
 
 Provides functions to extract text with font information from PDFs
 and plain text from TXT files.
@@ -10,7 +10,7 @@ from typing import Any
 
 import fitz  # PyMuPDF
 
-from codex.ingestion.heading_detection import (
+from tome.ingestion.heading_detection import (
     detect_heading_patterns,
     merge_heading_detection_methods,
 )

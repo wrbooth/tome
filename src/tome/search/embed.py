@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Codex Embedding Generation Script
+Tome Embedding Generation Script
 
 Generates embeddings for passages using OpenAI or local models.
 """
@@ -12,7 +12,7 @@ from typing import Any
 import click
 from psycopg2.extras import RealDictCursor
 
-from codex.config import (
+from tome.config import (
     EMBEDDING_MODEL,
     configure_logging,
     db_connection,

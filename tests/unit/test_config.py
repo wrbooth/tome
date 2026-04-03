@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 class TestSettings:
     def test_default_values(self):
-        from codex.config import Settings
+        from tome.config import Settings
 
         with patch.dict("os.environ", {}, clear=True):
             s = Settings(_env_file=None)
@@ -18,7 +18,7 @@ class TestSettings:
             assert s.meili_url == "http://localhost:7700"
 
     def test_env_override(self):
-        from codex.config import Settings
+        from tome.config import Settings
 
         with patch.dict(
             "os.environ",
@@ -31,7 +31,7 @@ class TestSettings:
 
 class TestModuleLevelConstants:
     def test_constants_match_settings(self):
-        from codex.config import (
+        from tome.config import (
             ANSWER_MODEL,
             EMBEDDING_MODEL,
             QUERY_ANALYSIS_MODEL,
@@ -47,20 +47,20 @@ class TestModuleLevelConstants:
 
 class TestGetDbConnection:
     def test_creates_pool_and_returns_connection(self):
-        from codex import config
+        from tome import config
 
         mock_pool = MagicMock()
         mock_pool.getconn.return_value = MagicMock()
         config._pool = None
-        with patch("codex.config.ThreadedConnectionPool", return_value=mock_pool):
+        with patch("tome.config.ThreadedConnectionPool", return_value=mock_pool):
             conn = config.get_db_connection()
             mock_pool.getconn.assert_called_once()
             assert conn is not None
         config._pool = None
 
     def test_uses_settings_values(self):
-        from codex import config
-        from codex.config import Settings
+        from tome import config
+        from tome.config import Settings
 
         config._pool = None
         mock_settings = Settings(
@@ -69,8 +69,8 @@ class TestGetDbConnection:
             db_port="5433",
         )
         with (
-            patch("codex.config.settings", mock_settings),
-            patch("codex.config.ThreadedConnectionPool") as mock_pool_cls,
+            patch("tome.config.settings", mock_settings),
+            patch("tome.config.ThreadedConnectionPool") as mock_pool_cls,
         ):
             mock_pool_cls.return_value = MagicMock()
             config.get_db_connection()
@@ -82,7 +82,7 @@ class TestGetDbConnection:
 
 class TestGetMeiliClient:
     def test_returns_client(self):
-        from codex.config import get_meili_client
+        from tome.config import get_meili_client
 
         client = get_meili_client()
         assert client is not None
@@ -90,9 +90,9 @@ class TestGetMeiliClient:
 
 class TestGetOpenaiClient:
     def test_returns_client(self):
-        from codex.config import get_openai_client
+        from tome.config import get_openai_client
 
-        with patch("codex.config.settings") as mock_settings:
+        with patch("tome.config.settings") as mock_settings:
             mock_settings.openai_api_key = "test-key"
             client = get_openai_client()
             assert client is not None

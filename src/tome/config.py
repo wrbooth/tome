@@ -1,5 +1,5 @@
 """
-Shared configuration and client singletons for Codex.
+Shared configuration and client singletons for Tome.
 """
 
 import logging
@@ -12,7 +12,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def configure_logging(level=logging.INFO):
-    """Configure logging for the Codex application."""
+    """Configure logging for the Tome application."""
     logging.basicConfig(
         level=level,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -39,9 +39,9 @@ class Settings(BaseSettings):
     # Database
     db_host: str = "localhost"
     db_port: str = "5432"
-    db_name: str = "codex"
-    db_user: str = "codex"
-    db_password: str = "codex"  # noqa: S105 — dev default only
+    db_name: str = "tome"
+    db_user: str = "tome"
+    db_password: str = "tome"  # noqa: S105 — dev default only
 
     # Meilisearch
     meili_url: str = "http://localhost:7700"

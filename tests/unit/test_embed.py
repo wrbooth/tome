@@ -2,8 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
-from codex.search.embed import validate_embedding_dimension
 from tests.unit.conftest import make_mock_db_connection
+from tome.search.embed import validate_embedding_dimension
 
 # ── validate_embedding_dimension ──────────────────────────────────────────
 
@@ -27,16 +27,16 @@ class TestValidateEmbeddingDimension:
 
 class TestGetOpenaiEmbeddings:
     def test_single_batch(self, mock_openai_client):
-        from codex.search.embed import get_openai_embeddings
+        from tome.search.embed import get_openai_embeddings
 
-        with patch("codex.search.embed.get_openai_client", return_value=mock_openai_client):
+        with patch("tome.search.embed.get_openai_client", return_value=mock_openai_client):
             texts = ["Hello world"]
             result = get_openai_embeddings(texts)
             assert len(result) == 1
             assert len(result[0]) == 1536
 
     def test_batching_over_100(self, mock_openai_client):
-        from codex.search.embed import get_openai_embeddings
+        from tome.search.embed import get_openai_embeddings
 
         # Create mock that returns different batch sizes
         def make_response(batch):
@@ -53,7 +53,7 @@ class TestGetOpenaiEmbeddings:
             make_response(kwargs["input"])
         )
 
-        with patch("codex.search.embed.get_openai_client", return_value=mock_openai_client):
+        with patch("tome.search.embed.get_openai_client", return_value=mock_openai_client):
             texts = [f"text {i}" for i in range(150)]
             result = get_openai_embeddings(texts)
             assert len(result) == 150
@@ -61,11 +61,11 @@ class TestGetOpenaiEmbeddings:
             assert mock_openai_client.embeddings.create.call_count == 2
 
     def test_api_exception_returns_empty(self):
-        from codex.search.embed import get_openai_embeddings
+        from tome.search.embed import get_openai_embeddings
 
         mock_client = MagicMock()
         mock_client.embeddings.create.side_effect = Exception("API error")
-        with patch("codex.search.embed.get_openai_client", return_value=mock_client):
+        with patch("tome.search.embed.get_openai_client", return_value=mock_client):
             result = get_openai_embeddings(["test"])
             assert result == []
 
@@ -77,14 +77,14 @@ class TestGetLocalEmbeddings:
     def test_returns_embeddings(self):
         import numpy as np
 
-        from codex.search.embed import get_local_embeddings
+        from tome.search.embed import get_local_embeddings
 
         mock_model = MagicMock()
         mock_model.encode.return_value = np.array([[0.1, 0.2, 0.3]])
 
         with (
-            patch("codex.search.embed.SentenceTransformer", return_value=mock_model)
-            if hasattr(__import__("codex.search.embed", fromlist=["embed"]), "SentenceTransformer")
+            patch("tome.search.embed.SentenceTransformer", return_value=mock_model)
+            if hasattr(__import__("tome.search.embed", fromlist=["embed"]), "SentenceTransformer")
             else patch.dict("sys.modules", {"sentence_transformers": MagicMock()})
         ):
             # The function imports SentenceTransformer inside itself
@@ -109,7 +109,7 @@ class TestGetLocalEmbeddings:
 
 class TestGetUnembeddedPassages:
     def test_without_document_id(self, mock_db_conn):
-        from codex.search.embed import get_unembedded_passages
+        from tome.search.embed import get_unembedded_passages
 
         mock_cursor = mock_db_conn.cursor.return_value.__enter__.return_value
         mock_cursor.fetchall.return_value = [
@@ -124,7 +124,7 @@ class TestGetUnembeddedPassages:
         assert len(call_args[0][1]) == 1  # only limit param
 
     def test_with_document_id(self, mock_db_conn):
-        from codex.search.embed import get_unembedded_passages
+        from tome.search.embed import get_unembedded_passages
 
         mock_cursor = mock_db_conn.cursor.return_value.__enter__.return_value
         mock_cursor.fetchall.return_value = [{"id": "p1", "text": "Text"}]
@@ -139,7 +139,7 @@ class TestGetUnembeddedPassages:
 
 class TestUpdatePassageEmbeddings:
     def test_updates_and_commits(self, mock_db_conn):
-        from codex.search.embed import update_passage_embeddings
+        from tome.search.embed import update_passage_embeddings
 
         mock_cursor = mock_db_conn.cursor.return_value.__enter__.return_value
         embeddings = [("p1", [0.1] * 10), ("p2", [0.2] * 10)]
@@ -153,44 +153,44 @@ class TestUpdatePassageEmbeddings:
 
 class TestRunEmbeddings:
     def test_no_passages_returns_true(self):
-        from codex.search.embed import run_embeddings
+        from tome.search.embed import run_embeddings
 
         mock_conn = MagicMock()
         with (
-            patch("codex.search.embed.db_connection", make_mock_db_connection(mock_conn)),
-            patch("codex.search.embed.get_unembedded_passages", return_value=[]),
+            patch("tome.search.embed.db_connection", make_mock_db_connection(mock_conn)),
+            patch("tome.search.embed.get_unembedded_passages", return_value=[]),
         ):
             result = run_embeddings()
             assert result is True
 
     def test_failed_embedding_returns_false(self):
-        from codex.search.embed import run_embeddings
+        from tome.search.embed import run_embeddings
 
         mock_conn = MagicMock()
         passages = [{"id": "p1", "text": "Test text"}]
         with (
-            patch("codex.search.embed.db_connection", make_mock_db_connection(mock_conn)),
-            patch("codex.search.embed.get_unembedded_passages", return_value=passages),
-            patch("codex.search.embed.get_openai_embeddings", return_value=[]),
+            patch("tome.search.embed.db_connection", make_mock_db_connection(mock_conn)),
+            patch("tome.search.embed.get_unembedded_passages", return_value=passages),
+            patch("tome.search.embed.get_openai_embeddings", return_value=[]),
         ):
             result = run_embeddings(provider="openai")
             assert result is False
 
     def test_successful_embedding(self):
-        from codex.search.embed import run_embeddings
+        from tome.search.embed import run_embeddings
 
         mock_conn = MagicMock()
         passages = [{"id": "p1", "text": "Test text"}]
         embeddings = [[0.1] * 1536]
         with (
-            patch("codex.search.embed.db_connection", make_mock_db_connection(mock_conn)),
-            patch("codex.search.embed.get_unembedded_passages") as mock_get,
+            patch("tome.search.embed.db_connection", make_mock_db_connection(mock_conn)),
+            patch("tome.search.embed.get_unembedded_passages") as mock_get,
         ):
             # First call returns passages, second (remaining check) returns empty
             mock_get.side_effect = [passages, []]
             with (
-                patch("codex.search.embed.get_openai_embeddings", return_value=embeddings),
-                patch("codex.search.embed.update_passage_embeddings"),
+                patch("tome.search.embed.get_openai_embeddings", return_value=embeddings),
+                patch("tome.search.embed.update_passage_embeddings"),
             ):
                 result = run_embeddings(provider="openai")
                 assert result is True

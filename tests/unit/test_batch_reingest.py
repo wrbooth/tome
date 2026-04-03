@@ -5,7 +5,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from codex.ingestion.batch_reingest import (
+from tests.unit.conftest import make_mock_db_connection
+from tome.ingestion.batch_reingest import (
     clear_database,
     clear_documents,
     clear_meilisearch,
@@ -15,7 +16,6 @@ from codex.ingestion.batch_reingest import (
     reingest_document,
     run_embedding,
 )
-from tests.unit.conftest import make_mock_db_connection
 
 # ── clear_database ────────────────────────────────────────────────────────
 
@@ -25,7 +25,7 @@ class TestClearDatabase:
         mock_conn = MagicMock()
         cursor = mock_conn.cursor.return_value.__enter__.return_value
         cursor.rowcount = 10
-        with patch("codex.ingestion.batch_reingest.db_connection", make_mock_db_connection(mock_conn)):
+        with patch("tome.ingestion.batch_reingest.db_connection", make_mock_db_connection(mock_conn)):
             clear_database()
             calls = cursor.execute.call_args_list
             # First delete passages, then documents
@@ -37,7 +37,7 @@ class TestClearDatabase:
         cursor = mock_conn.cursor.return_value.__enter__.return_value
         cursor.execute.side_effect = Exception("DB error")
         with (
-            patch("codex.ingestion.batch_reingest.db_connection", make_mock_db_connection(mock_conn)),
+            patch("tome.ingestion.batch_reingest.db_connection", make_mock_db_connection(mock_conn)),
             pytest.raises(Exception, match="DB error"),
         ):
             clear_database()
@@ -51,7 +51,7 @@ class TestClearDocuments:
         mock_conn = MagicMock()
         cursor = mock_conn.cursor.return_value.__enter__.return_value
         cursor.rowcount = 1
-        with patch("codex.ingestion.batch_reingest.db_connection", make_mock_db_connection(mock_conn)):
+        with patch("tome.ingestion.batch_reingest.db_connection", make_mock_db_connection(mock_conn)):
             clear_documents(["doc-1", "doc-2"])
             # 2 docs x 2 deletes each (passages + document)
             assert cursor.execute.call_count == 4
@@ -61,7 +61,7 @@ class TestClearDocuments:
         cursor = mock_conn.cursor.return_value.__enter__.return_value
         cursor.execute.side_effect = Exception("DB error")
         with (
-            patch("codex.ingestion.batch_reingest.db_connection", make_mock_db_connection(mock_conn)),
+            patch("tome.ingestion.batch_reingest.db_connection", make_mock_db_connection(mock_conn)),
             pytest.raises(Exception, match="DB error"),
         ):
             clear_documents(["doc-1"])
@@ -69,7 +69,7 @@ class TestClearDocuments:
     def test_empty_list(self):
         mock_conn = MagicMock()
         cursor = mock_conn.cursor.return_value.__enter__.return_value
-        with patch("codex.ingestion.batch_reingest.db_connection", make_mock_db_connection(mock_conn)):
+        with patch("tome.ingestion.batch_reingest.db_connection", make_mock_db_connection(mock_conn)):
             clear_documents([])
             cursor.execute.assert_not_called()
 
@@ -79,7 +79,7 @@ class TestClearDocuments:
 
 class TestClearMeilisearch:
     def test_deletes_index(self, mock_meili_client):
-        with patch("codex.ingestion.batch_reingest.get_meili_client", return_value=mock_meili_client):
+        with patch("tome.ingestion.batch_reingest.get_meili_client", return_value=mock_meili_client):
             clear_meilisearch()
             mock_meili_client.index("passages").delete.assert_called_once()
 
@@ -87,8 +87,8 @@ class TestClearMeilisearch:
         mock_meili_client.index("passages").delete.side_effect = Exception(
             "index not found"
         )
-        with patch("codex.ingestion.batch_reingest.get_meili_client", return_value=mock_meili_client):
-            with caplog.at_level("INFO", logger="codex.ingestion.batch_reingest"):
+        with patch("tome.ingestion.batch_reingest.get_meili_client", return_value=mock_meili_client):
+            with caplog.at_level("INFO", logger="tome.ingestion.batch_reingest"):
                 clear_meilisearch()
             assert "already empty" in caplog.text
 
@@ -96,17 +96,17 @@ class TestClearMeilisearch:
         mock_meili_client.index("passages").delete.side_effect = Exception(
             "timeout error"
         )
-        with patch("codex.ingestion.batch_reingest.get_meili_client", return_value=mock_meili_client):
-            with caplog.at_level("ERROR", logger="codex.ingestion.batch_reingest"):
+        with patch("tome.ingestion.batch_reingest.get_meili_client", return_value=mock_meili_client):
+            with caplog.at_level("ERROR", logger="tome.ingestion.batch_reingest"):
                 clear_meilisearch()
             assert "Error deleting" in caplog.text
 
     def test_handles_connection_error(self, caplog):
         with patch(
-            "codex.ingestion.batch_reingest.get_meili_client",
+            "tome.ingestion.batch_reingest.get_meili_client",
             side_effect=Exception("Connection refused"),
         ):
-            with caplog.at_level("ERROR", logger="codex.ingestion.batch_reingest"):
+            with caplog.at_level("ERROR", logger="tome.ingestion.batch_reingest"):
                 clear_meilisearch()
             assert "Error connecting" in caplog.text
 
@@ -157,7 +157,7 @@ class TestListAllDocuments:
                 "pub_year": 2001,
             },
         ]
-        with patch("codex.ingestion.batch_reingest.db_connection", make_mock_db_connection(mock_conn)):
+        with patch("tome.ingestion.batch_reingest.db_connection", make_mock_db_connection(mock_conn)):
             result = list_all_documents()
             assert len(result) == 2
 
@@ -165,7 +165,7 @@ class TestListAllDocuments:
         mock_conn = MagicMock()
         cursor = mock_conn.cursor.return_value.__enter__.return_value
         cursor.fetchall.return_value = []
-        with patch("codex.ingestion.batch_reingest.db_connection", make_mock_db_connection(mock_conn)):
+        with patch("tome.ingestion.batch_reingest.db_connection", make_mock_db_connection(mock_conn)):
             result = list_all_documents()
             assert result == []
 
@@ -175,7 +175,7 @@ class TestListAllDocuments:
 
 class TestReingestDocument:
     def test_success(self):
-        with patch("codex.ingestion.ingest.ingest_document") as mock_ingest:
+        with patch("tome.ingestion.ingest.ingest_document") as mock_ingest:
             result = reingest_document("/path/doc.pdf", "Doc Title")
             assert result is True
             mock_ingest.assert_called_once_with(
@@ -183,7 +183,7 @@ class TestReingestDocument:
             )
 
     def test_with_metadata(self):
-        with patch("codex.ingestion.ingest.ingest_document") as mock_ingest:
+        with patch("tome.ingestion.ingest.ingest_document") as mock_ingest:
             result = reingest_document(
                 "/path/doc.pdf", "Doc", authors="Alice", pub_year=2000, debug=True
             )
@@ -193,7 +193,7 @@ class TestReingestDocument:
             )
 
     def test_failure(self):
-        with patch("codex.ingestion.ingest.ingest_document", side_effect=Exception("Ingest failed")):
+        with patch("tome.ingestion.ingest.ingest_document", side_effect=Exception("Ingest failed")):
             result = reingest_document("/path/doc.pdf", "Doc")
             assert result is False
 
@@ -203,24 +203,24 @@ class TestReingestDocument:
 
 class TestRunEmbedding:
     def test_success(self):
-        with patch("codex.search.embed.run_embeddings", return_value=True) as mock_embed:
+        with patch("tome.search.embed.run_embeddings", return_value=True) as mock_embed:
             result = run_embedding()
             assert result is True
             mock_embed.assert_called_once_with(None)
 
     def test_with_document_ids(self):
-        with patch("codex.search.embed.run_embeddings", return_value=True) as mock_embed:
+        with patch("tome.search.embed.run_embeddings", return_value=True) as mock_embed:
             result = run_embedding(["doc-1", "doc-2"])
             assert result is True
             mock_embed.assert_called_once_with(["doc-1", "doc-2"])
 
     def test_failure(self):
-        with patch("codex.search.embed.run_embeddings", return_value=False):
+        with patch("tome.search.embed.run_embeddings", return_value=False):
             result = run_embedding()
             assert result is False
 
     def test_exception(self):
-        with patch("codex.search.embed.run_embeddings", side_effect=Exception("Error")):
+        with patch("tome.search.embed.run_embeddings", side_effect=Exception("Error")):
             result = run_embedding()
             assert result is False
 
@@ -232,8 +232,8 @@ class TestMainCli:
     def test_all_flag_no_documents(self, caplog):
         runner = CliRunner()
         with (
-            caplog.at_level("INFO", logger="codex.ingestion.batch_reingest"),
-            patch("codex.ingestion.batch_reingest.list_all_documents", return_value=[]),
+            caplog.at_level("INFO", logger="tome.ingestion.batch_reingest"),
+            patch("tome.ingestion.batch_reingest.list_all_documents", return_value=[]),
         ):
             runner.invoke(main, ["--all"])
         assert "No documents found" in caplog.text
@@ -250,10 +250,10 @@ class TestMainCli:
         ]
         runner = CliRunner()
         with (
-            caplog.at_level("INFO", logger="codex.ingestion.batch_reingest"),
-            patch("codex.ingestion.batch_reingest.list_all_documents", return_value=docs),
-            patch("codex.ingestion.batch_reingest.reingest_document", return_value=True),
-            patch("codex.ingestion.batch_reingest.run_embedding", return_value=True),
+            caplog.at_level("INFO", logger="tome.ingestion.batch_reingest"),
+            patch("tome.ingestion.batch_reingest.list_all_documents", return_value=docs),
+            patch("tome.ingestion.batch_reingest.reingest_document", return_value=True),
+            patch("tome.ingestion.batch_reingest.run_embedding", return_value=True),
             patch("pathlib.Path.exists", return_value=True),
         ):
             runner.invoke(main, ["--all"])
@@ -270,11 +270,11 @@ class TestMainCli:
             "pub_year": 2000,
         }
         with (
-            caplog.at_level("INFO", logger="codex.ingestion.batch_reingest"),
-            patch("codex.ingestion.batch_reingest.db_connection", make_mock_db_connection(mock_conn)),
-            patch("codex.ingestion.batch_reingest.get_document_info", return_value=doc_info),
-            patch("codex.ingestion.batch_reingest.reingest_document", return_value=True),
-            patch("codex.ingestion.batch_reingest.run_embedding", return_value=True),
+            caplog.at_level("INFO", logger="tome.ingestion.batch_reingest"),
+            patch("tome.ingestion.batch_reingest.db_connection", make_mock_db_connection(mock_conn)),
+            patch("tome.ingestion.batch_reingest.get_document_info", return_value=doc_info),
+            patch("tome.ingestion.batch_reingest.reingest_document", return_value=True),
+            patch("tome.ingestion.batch_reingest.run_embedding", return_value=True),
             patch("pathlib.Path.exists", return_value=True),
         ):
             runner.invoke(main, ["d1"])
@@ -284,16 +284,16 @@ class TestMainCli:
         runner = CliRunner()
         mock_conn = MagicMock()
         with (
-            caplog.at_level("WARNING", logger="codex.ingestion.batch_reingest"),
-            patch("codex.ingestion.batch_reingest.db_connection", make_mock_db_connection(mock_conn)),
-            patch("codex.ingestion.batch_reingest.get_document_info", return_value=None),
+            caplog.at_level("WARNING", logger="tome.ingestion.batch_reingest"),
+            patch("tome.ingestion.batch_reingest.db_connection", make_mock_db_connection(mock_conn)),
+            patch("tome.ingestion.batch_reingest.get_document_info", return_value=None),
         ):
             runner.invoke(main, ["nonexistent"])
         assert "not found" in caplog.text
 
     def test_no_documents_specified(self, caplog):
         runner = CliRunner()
-        with caplog.at_level("ERROR", logger="codex.ingestion.batch_reingest"):
+        with caplog.at_level("ERROR", logger="tome.ingestion.batch_reingest"):
             runner.invoke(main, [])
         assert "Must specify" in caplog.text
 
@@ -309,11 +309,11 @@ class TestMainCli:
         ]
         runner = CliRunner()
         with (
-            patch("codex.ingestion.batch_reingest.list_all_documents", return_value=docs),
-            patch("codex.ingestion.batch_reingest.clear_database") as mock_clear_db,
-            patch("codex.ingestion.batch_reingest.clear_meilisearch") as mock_clear_ms,
-            patch("codex.ingestion.batch_reingest.reingest_document", return_value=True),
-            patch("codex.ingestion.batch_reingest.run_embedding", return_value=True),
+            patch("tome.ingestion.batch_reingest.list_all_documents", return_value=docs),
+            patch("tome.ingestion.batch_reingest.clear_database") as mock_clear_db,
+            patch("tome.ingestion.batch_reingest.clear_meilisearch") as mock_clear_ms,
+            patch("tome.ingestion.batch_reingest.reingest_document", return_value=True),
+            patch("tome.ingestion.batch_reingest.run_embedding", return_value=True),
             patch("pathlib.Path.exists", return_value=True),
         ):
             runner.invoke(main, ["--all", "--clear-first"])
@@ -332,10 +332,10 @@ class TestMainCli:
         ]
         runner = CliRunner()
         with (
-            patch("codex.ingestion.batch_reingest.list_all_documents", return_value=docs),
-            patch("codex.ingestion.batch_reingest.clear_documents") as mock_clear,
-            patch("codex.ingestion.batch_reingest.reingest_document", return_value=True),
-            patch("codex.ingestion.batch_reingest.run_embedding", return_value=True),
+            patch("tome.ingestion.batch_reingest.list_all_documents", return_value=docs),
+            patch("tome.ingestion.batch_reingest.clear_documents") as mock_clear,
+            patch("tome.ingestion.batch_reingest.reingest_document", return_value=True),
+            patch("tome.ingestion.batch_reingest.run_embedding", return_value=True),
             patch("pathlib.Path.exists", return_value=True),
         ):
             runner.invoke(main, ["--all", "--clear-docs", "d1,d2"])
@@ -353,9 +353,9 @@ class TestMainCli:
         ]
         runner = CliRunner()
         with (
-            patch("codex.ingestion.batch_reingest.list_all_documents", return_value=docs),
-            patch("codex.ingestion.batch_reingest.reingest_document", return_value=True),
-            patch("codex.ingestion.batch_reingest.run_embedding") as mock_embed,
+            patch("tome.ingestion.batch_reingest.list_all_documents", return_value=docs),
+            patch("tome.ingestion.batch_reingest.reingest_document", return_value=True),
+            patch("tome.ingestion.batch_reingest.run_embedding") as mock_embed,
             patch("pathlib.Path.exists", return_value=True),
         ):
             runner.invoke(main, ["--all", "--skip-embedding"])
@@ -373,8 +373,8 @@ class TestMainCli:
         ]
         runner = CliRunner()
         with (
-            caplog.at_level("INFO", logger="codex.ingestion.batch_reingest"),
-            patch("codex.ingestion.batch_reingest.list_all_documents", return_value=docs),
+            caplog.at_level("INFO", logger="tome.ingestion.batch_reingest"),
+            patch("tome.ingestion.batch_reingest.list_all_documents", return_value=docs),
             patch("pathlib.Path.exists", return_value=False),
         ):
             runner.invoke(main, ["--all", "--skip-embedding"])
@@ -393,9 +393,9 @@ class TestMainCli:
         ]
         runner = CliRunner()
         with (
-            caplog.at_level("INFO", logger="codex.ingestion.batch_reingest"),
-            patch("codex.ingestion.batch_reingest.list_all_documents", return_value=docs),
-            patch("codex.ingestion.batch_reingest.reingest_document", return_value=False),
+            caplog.at_level("INFO", logger="tome.ingestion.batch_reingest"),
+            patch("tome.ingestion.batch_reingest.list_all_documents", return_value=docs),
+            patch("tome.ingestion.batch_reingest.reingest_document", return_value=False),
             patch("pathlib.Path.exists", return_value=True),
         ):
             result = runner.invoke(main, ["--all", "--skip-embedding"])
@@ -413,10 +413,10 @@ class TestMainCli:
             "pub_year": None,
         }
         with (
-            patch("codex.ingestion.batch_reingest.db_connection", make_mock_db_connection(mock_conn)),
-            patch("codex.ingestion.batch_reingest.get_document_info", return_value=doc_info),
-            patch("codex.ingestion.batch_reingest.reingest_document", return_value=True),
-            patch("codex.ingestion.batch_reingest.run_embedding", return_value=True) as mock_embed,
+            patch("tome.ingestion.batch_reingest.db_connection", make_mock_db_connection(mock_conn)),
+            patch("tome.ingestion.batch_reingest.get_document_info", return_value=doc_info),
+            patch("tome.ingestion.batch_reingest.reingest_document", return_value=True),
+            patch("tome.ingestion.batch_reingest.run_embedding", return_value=True) as mock_embed,
             patch("pathlib.Path.exists", return_value=True),
         ):
             runner.invoke(main, ["d1"])

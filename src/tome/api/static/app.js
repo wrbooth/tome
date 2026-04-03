@@ -141,9 +141,9 @@
         }
 
         // Store lookup for citation processing
-        window.Codex = window.Codex || {};
-        window.Codex._sourceLookup = lookup;
-        window.Codex._sourceResults = results;
+        window.Tome = window.Tome || {};
+        window.Tome._sourceLookup = lookup;
+        window.Tome._sourceResults = results;
     }
 
     function buildSourcePanelCards() {
@@ -211,7 +211,7 @@
             return rawText;
         }
 
-        var lookup = (window.Codex && window.Codex._sourceLookup) || {};
+        var lookup = (window.Tome && window.Tome._sourceLookup) || {};
 
         // Reset citation tracking
         citationMap = {};
@@ -392,7 +392,7 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     query: query,
-                    document_id: window.Codex && window.Codex.activeDocumentId || null,
+                    document_id: window.Tome && window.Tome.activeDocumentId || null,
                 }),
             });
 
@@ -423,8 +423,8 @@
 
     newChatBtn.addEventListener('click', function () {
         // Clear document filter if active
-        if (window.Codex && window.Codex.clearDocumentFilter) {
-            window.Codex.clearDocumentFilter();
+        if (window.Tome && window.Tome.clearDocumentFilter) {
+            window.Tome.clearDocumentFilter();
         }
         // Close source panel
         closeSourcePanel();

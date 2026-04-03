@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Codex Document Management CLI
+Tome Document Management CLI
 
 Provides commands for managing documents in the system:
 - List documents with stats
@@ -18,7 +18,7 @@ import click
 from psycopg2.extras import RealDictCursor
 from tabulate import tabulate
 
-from codex.config import configure_logging, db_connection, get_meili_client
+from tome.config import configure_logging, db_connection, get_meili_client
 
 logger = logging.getLogger(__name__)
 
@@ -214,7 +214,7 @@ def reindex_document_meilisearch(conn, document_id: str) -> bool:
             return False
 
         # Prepare documents for indexing
-        from codex.ingestion.ingest import extract_entities_and_years
+        from tome.ingestion.ingest import extract_entities_and_years
 
         documents = []
         for passage in passages:
@@ -261,7 +261,7 @@ def reindex_document_meilisearch(conn, document_id: str) -> bool:
 
 @click.group()
 def cli():
-    """Codex Document Management CLI."""
+    """Tome Document Management CLI."""
 
 
 @cli.command()

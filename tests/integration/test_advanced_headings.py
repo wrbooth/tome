@@ -6,7 +6,7 @@ Test script for advanced heading detection functionality.
 import sys
 from pathlib import Path
 
-from codex.ingestion.ingest import (
+from tome.ingestion.ingest import (
     extract_headings_by_typography,
     extract_headings_from_outline,
     extract_headings_from_toc_pages,

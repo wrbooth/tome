@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner
 
-from codex.ingestion.batch_ingest import (
+from tome.ingestion.batch_ingest import (
     extract_metadata_from_filename,
     get_document_files,
     ingest_single_document,
@@ -119,7 +119,7 @@ class TestGetDocumentFiles:
 class TestIngestSingleDocument:
     def test_success(self):
         with patch(
-            "codex.ingestion.batch_ingest.ingest_document", return_value="doc-123"
+            "tome.ingestion.batch_ingest.ingest_document", return_value="doc-123"
         ) as mock_ingest:
             result = ingest_single_document("/path/doc.pdf", {"title": "Doc"})
             assert result["status"] == "success"
@@ -130,7 +130,7 @@ class TestIngestSingleDocument:
 
     def test_exception_returns_error(self):
         with patch(
-            "codex.ingestion.batch_ingest.ingest_document", side_effect=Exception("Process failed")
+            "tome.ingestion.batch_ingest.ingest_document", side_effect=Exception("Process failed")
         ):
             result = ingest_single_document("/path/doc.pdf", {"title": "Doc"})
             assert result["status"] == "error"
@@ -138,7 +138,7 @@ class TestIngestSingleDocument:
 
     def test_authors_list_converted_to_string(self):
         with patch(
-            "codex.ingestion.batch_ingest.ingest_document", return_value="doc-123"
+            "tome.ingestion.batch_ingest.ingest_document", return_value="doc-123"
         ) as mock_ingest:
             ingest_single_document(
                 "/path/doc.pdf", {"title": "Doc", "authors": ["A", "B"]}
@@ -149,7 +149,7 @@ class TestIngestSingleDocument:
 
     def test_pub_year_converted_to_int(self):
         with patch(
-            "codex.ingestion.batch_ingest.ingest_document", return_value="doc-123"
+            "tome.ingestion.batch_ingest.ingest_document", return_value="doc-123"
         ) as mock_ingest:
             ingest_single_document("/path/doc.pdf", {"title": "Doc", "pub_year": 2000})
             mock_ingest.assert_called_once_with(
@@ -158,7 +158,7 @@ class TestIngestSingleDocument:
 
     def test_debug_flag(self):
         with patch(
-            "codex.ingestion.batch_ingest.ingest_document", return_value="doc-123"
+            "tome.ingestion.batch_ingest.ingest_document", return_value="doc-123"
         ) as mock_ingest:
             ingest_single_document("/path/doc.pdf", {"title": "Doc"}, debug=True)
             mock_ingest.assert_called_once_with(
@@ -173,7 +173,7 @@ class TestProcessDocumentsSequential:
     def test_processes_all_files(self):
         files = ["/path/a.pdf", "/path/b.pdf"]
         metadata_dict = {}
-        with patch("codex.ingestion.batch_ingest.ingest_document", return_value="doc-123"):
+        with patch("tome.ingestion.batch_ingest.ingest_document", return_value="doc-123"):
             results = process_documents_sequential(files, metadata_dict, debug=False)
             assert len(results) == 2
             assert all(r["status"] == "success" for r in results)
@@ -182,7 +182,7 @@ class TestProcessDocumentsSequential:
         files = ["/path/doc.pdf"]
         metadata_dict = {"doc.pdf": {"title": "Custom Title", "authors": "Author X"}}
         with patch(
-            "codex.ingestion.batch_ingest.ingest_document", return_value="doc-123"
+            "tome.ingestion.batch_ingest.ingest_document", return_value="doc-123"
         ) as mock_ingest:
             process_documents_sequential(files, metadata_dict, debug=False)
             mock_ingest.assert_called_once_with(
@@ -197,7 +197,7 @@ class TestProcessDocumentsSequential:
         files = ["/path/My Report.pdf"]
         metadata_dict = {}
         with patch(
-            "codex.ingestion.batch_ingest.ingest_document", return_value="doc-123"
+            "tome.ingestion.batch_ingest.ingest_document", return_value="doc-123"
         ) as mock_ingest:
             process_documents_sequential(files, metadata_dict, debug=False)
             mock_ingest.assert_called_once_with(
@@ -210,7 +210,7 @@ class TestProcessDocumentsSequential:
 
     def test_handles_errors(self):
         files = ["/path/a.pdf"]
-        with patch("codex.ingestion.batch_ingest.ingest_document", side_effect=Exception("failed")):
+        with patch("tome.ingestion.batch_ingest.ingest_document", side_effect=Exception("failed")):
             results = process_documents_sequential(files, {}, debug=False)
             assert results[0]["status"] == "error"
 
@@ -221,14 +221,14 @@ class TestProcessDocumentsSequential:
 class TestProcessDocumentsParallel:
     def test_processes_all_files(self):
         files = ["/path/a.pdf", "/path/b.pdf"]
-        with patch("codex.ingestion.batch_ingest.ingest_document", return_value="doc-123"):
+        with patch("tome.ingestion.batch_ingest.ingest_document", return_value="doc-123"):
             results = process_documents_parallel(files, {}, max_workers=2, debug=False)
             assert len(results) == 2
 
     def test_handles_future_exception(self):
         files = ["/path/a.pdf"]
         with patch(
-            "codex.ingestion.batch_ingest.ingest_document", side_effect=Exception("Process crash")
+            "tome.ingestion.batch_ingest.ingest_document", side_effect=Exception("Process crash")
         ):
             results = process_documents_parallel(files, {}, max_workers=1, debug=False)
             assert len(results) == 1
@@ -243,7 +243,7 @@ class TestMainCli:
         empty_dir = tmp_path / "empty"
         empty_dir.mkdir()
         runner = CliRunner()
-        with caplog.at_level("WARNING", logger="codex.ingestion.batch_ingest"):
+        with caplog.at_level("WARNING", logger="tome.ingestion.batch_ingest"):
             runner.invoke(main, [str(empty_dir)])
         assert "No document files found" in caplog.text
 
@@ -252,8 +252,8 @@ class TestMainCli:
         pdf.write_text("fake pdf")
         runner = CliRunner()
         with (
-            caplog.at_level("INFO", logger="codex.ingestion.batch_ingest"),
-            patch("codex.ingestion.batch_ingest.ingest_document", return_value="doc-123"),
+            caplog.at_level("INFO", logger="tome.ingestion.batch_ingest"),
+            patch("tome.ingestion.batch_ingest.ingest_document", return_value="doc-123"),
         ):
             runner.invoke(main, [str(tmp_path)])
         assert "Successful: 1" in caplog.text
@@ -267,8 +267,8 @@ class TestMainCli:
             {"file_path": str(tmp_path / "b.pdf"), "status": "success", "output": "OK"},
         ]
         with (
-            caplog.at_level("INFO", logger="codex.ingestion.batch_ingest"),
-            patch("codex.ingestion.batch_ingest.process_documents_parallel", return_value=mock_results),
+            caplog.at_level("INFO", logger="tome.ingestion.batch_ingest"),
+            patch("tome.ingestion.batch_ingest.process_documents_parallel", return_value=mock_results),
         ):
             runner.invoke(main, [str(tmp_path), "--parallel", "2"])
         assert "Successful: 2" in caplog.text
@@ -279,7 +279,7 @@ class TestMainCli:
         meta = tmp_path / "meta.json"
         meta.write_text(json.dumps([{"filename": "doc.pdf", "title": "Custom Doc"}]))
         runner = CliRunner()
-        with patch("codex.ingestion.batch_ingest.ingest_document", return_value="doc-123"):
+        with patch("tome.ingestion.batch_ingest.ingest_document", return_value="doc-123"):
             result = runner.invoke(main, [str(tmp_path), "--metadata", str(meta)])
             assert result.exit_code == 0
 
@@ -288,7 +288,7 @@ class TestMainCli:
         pdf.write_text("fake pdf")
         output = tmp_path / "results.json"
         runner = CliRunner()
-        with patch("codex.ingestion.batch_ingest.ingest_document", return_value="doc-123"):
+        with patch("tome.ingestion.batch_ingest.ingest_document", return_value="doc-123"):
             runner.invoke(main, [str(tmp_path), "--output", str(output)])
             assert output.exists()
             data = json.loads(output.read_text())
@@ -299,8 +299,8 @@ class TestMainCli:
         pdf.write_text("fake pdf")
         runner = CliRunner()
         with (
-            caplog.at_level("INFO", logger="codex.ingestion.batch_ingest"),
-            patch("codex.ingestion.batch_ingest.ingest_document", side_effect=Exception("error")),
+            caplog.at_level("INFO", logger="tome.ingestion.batch_ingest"),
+            patch("tome.ingestion.batch_ingest.ingest_document", side_effect=Exception("error")),
         ):
             result = runner.invoke(main, [str(tmp_path)])
         assert "Failed: 1" in caplog.text

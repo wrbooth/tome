@@ -6,9 +6,9 @@ import uuid
 from fastapi import APIRouter, HTTPException
 from psycopg2.extras import RealDictCursor
 
-from codex.config import db_connection, get_meili_client
-from codex.documents import get_document_stats, get_system_stats
-from codex.models import DocumentDetail, DocumentInfo
+from tome.config import db_connection, get_meili_client
+from tome.documents import get_document_stats, get_system_stats
+from tome.models import DocumentDetail, DocumentInfo
 
 logger = logging.getLogger(__name__)
 

@@ -1,5 +1,5 @@
 """
-Heading detection functions for the Codex ingestion pipeline.
+Heading detection functions for the Tome ingestion pipeline.
 
 Provides regex-based, outline-based, TOC-based, and typography-based
 heading detection, plus merging and ranking utilities.

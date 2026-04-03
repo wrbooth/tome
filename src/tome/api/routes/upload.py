@@ -11,7 +11,7 @@ from pathlib import Path
 import anyio
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
-from codex.models import IngestTaskInfo
+from tome.models import IngestTaskInfo
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ async def _run_ingestion(
     task["message"] = "Ingesting document..."
 
     try:
-        from codex.ingestion.ingest import ingest_document
+        from tome.ingestion.ingest import ingest_document
 
         doc_id = await asyncio.to_thread(
             ingest_document,

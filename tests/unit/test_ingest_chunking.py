@@ -1,6 +1,6 @@
 """Tests for chunk_text_with_headings in ingest.py."""
 
-from codex.ingestion.ingest import chunk_text_with_headings
+from tome.ingestion.ingest import chunk_text_with_headings
 
 
 class TestChunkTextWithHeadings:
