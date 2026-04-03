@@ -3,16 +3,18 @@
 ## Commands
 
 ```bash
-uv run pytest tests/ -v                          # Run all unit tests
-uv run pytest tests/ --cov=. --cov-report=term-missing  # Tests with coverage
-uv run pytest tests/test_ingest_pure.py -v       # Run single test file
+uv run pytest tests/unit/ -v                          # Run all unit tests
+uv run pytest tests/unit/ --cov=src --cov-report=term-missing  # Tests with coverage
+uv run pytest tests/unit/test_ingest_pure.py -v       # Run single test file
+uv run pytest tests/integration/ -v                   # Run integration tests (require live services)
 
-uv run python ingest.py <file> --title "..."     # Ingest a document
-uv run python batch_reingest.py --all --clear-first  # Full reingest
-uv run python search.py --q "query" --k 20       # Search
-uv run python documents.py list                  # List documents
-uv run python embed.py --provider openai         # Generate embeddings
-uv run python test_search.py --serial            # Integration search tests
+uv run codex-ingest <file> --title "..."              # Ingest a document
+uv run codex-batch-reingest --all --clear-first       # Full reingest
+uv run codex-search --q "query" --k 20                # Search
+uv run codex-documents list                           # List documents
+uv run codex-embed --provider openai                  # Generate embeddings
+
+uv run uvicorn codex.api.app:app --reload             # Run API server
 ```
 
 ## What This Is
@@ -22,20 +24,44 @@ A historical document indexing and search system. Ingests PDFs/TXT files, chunks
 ## Project Structure
 
 ```
-*.py              # Core modules (ingest, search, embed, documents, config, etc.)
-api/main.py       # FastAPI wrapper around search
-sql/schema.sql    # PostgreSQL schema (documents, passages, entities, years)
-tests/            # pytest unit tests (mocked, no external services needed)
-test_*.py         # Integration tests at root (require live services)
-data/             # Source documents for ingestion
+src/codex/                  # Main package (src layout)
+  config.py                 # Pydantic BaseSettings configuration
+  models.py                 # Shared Pydantic data models
+  documents.py              # Document management CLI + logic
+  ingestion/                # Document ingestion pipeline
+    ingest.py               # Main ingestion orchestrator + CLI
+    batch_ingest.py         # Batch ingestion CLI
+    batch_reingest.py       # Re-ingestion CLI
+    chunking.py             # Text chunking with heading-aware splitting
+    heading_detection.py    # Heading detection (regex, typography, TOC)
+    pdf_extraction.py       # PDF/TXT text extraction
+    entities.py             # NER entity extraction (spaCy)
+    storage.py              # Postgres + Meilisearch storage
+  search/                   # Search and retrieval
+    search.py               # Hybrid search + reranking + CLI
+    embed.py                # Embedding generation + CLI
+    answer_generator.py     # LLM answer generation
+  api/                      # FastAPI application
+    app.py                  # App factory, middleware, SPA serving
+    routes/
+      search.py             # Search + streaming endpoints
+      documents.py          # Document CRUD + stats endpoints
+      upload.py             # Document upload + ingestion tasks
+    static/                 # Frontend SPA assets
+tests/
+  unit/                     # Mocked unit tests (no external services)
+  integration/              # Integration tests (require live services)
+sql/schema.sql              # PostgreSQL schema
+docs/                       # Design docs and guides
 ```
 
 ## Conventions
 
 - **Package management**: use `uv`, not pip or poetry
 - **Testing**: pytest with `unittest.mock` for external services. Tests must run without Postgres/Meilisearch/OpenAI
-- `answer_generator.py` uses lazy loading via `_get_client()` -- tests patch `answer_generator._get_client` to return a mock
-- `entities.py` uses lazy loading via `_get_nlp()` for spaCy -- tests patch `entities._get_nlp` to return a mock or None
+- **Configuration**: Pydantic `BaseSettings` in `codex.config.Settings`, loaded from env vars and `.env`
+- `answer_generator.py` uses lazy loading via `_get_client()` -- tests patch `codex.search.answer_generator._get_client`
+- `entities.py` uses lazy loading via `_get_nlp()` for spaCy -- tests patch `codex.ingestion.entities._get_nlp`
 
 ## External Services
 
@@ -48,5 +74,5 @@ Requires Docker Compose services to be running for ingestion/search:
 
 - `is_quality_heading()` has 20+ regex filters that reject noise -- new heading patterns must pass all of them; check ordering matters (e.g. appendix check must come before coordinate filter)
 - `chunk_text_with_headings()` only splits at paragraph boundaries (newlines), not mid-paragraph
-- The existing `test_search.py` at root is an integration test requiring live services; `tests/test_search.py` is the unit test
+- Integration tests in `tests/integration/` require live Postgres/Meilisearch services
 - `merge_heading_results()` has a known bug: crashes with KeyError if first heading lacks a `confidence` key and a duplicate has one

@@ -2,3 +2,10 @@
 data/
 __pycache__/
 .venv/
+*.pyc
+.coverage
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+dist/
+*.egg-info/
