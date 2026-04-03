@@ -271,7 +271,7 @@ def format_answer_with_sources(answer_data: dict[str, Any]) -> str:
 
     # If sources are already mentioned in the answer, return as-is
     if "Sources:" in answer or "sources:" in answer:
-        return answer
+        return str(answer)
 
     # Otherwise, add source information
     if sources:
@@ -284,7 +284,7 @@ def format_answer_with_sources(answer_data: dict[str, Any]) -> str:
             # Legacy format with just page numbers
             source_text = ", ".join([f"Page {p}" for p in sorted(sources)])
         return f"{answer}\n\nSources: {source_text}"
-    return answer
+    return str(answer)
 
 
 def answer_query(

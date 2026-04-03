@@ -147,8 +147,7 @@ EVAL_QUESTIONS: list[TestQuestion] = [
     ),
     TestQuestion(
         question=(
-            "Did any of the founders of Cambridge participate "
-            "in the Revolutionary War?"
+            "Did any of the founders of Cambridge participate in the Revolutionary War?"
         ),
         expected_pages=[27],
         expected_answer="Jacob Gomber did",
@@ -182,8 +181,7 @@ EVAL_QUESTIONS: list[TestQuestion] = [
         question="Whose farm did the army take over to build Fletcher General Hospital?",
         expected_pages=[],
         expected_answer=(
-            "not mentioned in the book; other books may mention "
-            "it was the Oldham farm"
+            "not mentioned in the book; other books may mention it was the Oldham farm"
         ),
         description="Fletcher General Hospital farm ownership (not in corpus)",
     ),
@@ -213,7 +211,9 @@ def _simple_answer_comparison(expected: str, actual: str) -> dict[str, Any]:
             "reason": "Key information found in actual answer",
         }
 
-    not_available_expected = "not mentioned" in expected_lower or "not in book" in expected_lower
+    not_available_expected = (
+        "not mentioned" in expected_lower or "not in book" in expected_lower
+    )
     not_available_actual = any(
         p in actual_lower
         for p in ["not provide", "does not", "no information", "not mention"]
@@ -258,8 +258,7 @@ def compare_answers_with_llm(expected: str, actual: str) -> dict[str, Any]:
         "Return JSON with: match (bool), confidence (high/medium/low), reason (string)."
     )
     user_prompt = (
-        f"Expected: {expected}\n\nActual: {actual}\n\n"
-        "Compare and return JSON."
+        f"Expected: {expected}\n\nActual: {actual}\n\nCompare and return JSON."
     )
 
     try:

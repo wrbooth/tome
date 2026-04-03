@@ -49,7 +49,7 @@ def get_system_stats(conn) -> dict[str, Any]:
     }
 
 
-def get_document_stats(conn, document_id: str) -> dict[str, Any]:
+def get_document_stats(conn, document_id: str) -> dict[str, Any] | None:
     """Get detailed stats for a document."""
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         # Document info
@@ -253,14 +253,14 @@ def cli():
     """Tome Document Management CLI."""
 
 
-@cli.command()
+@cli.command(name="list")
 @click.option(
     "--format",
     default="table",
     type=click.Choice(["table", "json"]),
     help="Output format",
 )
-def list(format: str):  # noqa: A001, A002
+def list_cmd(format: str):  # noqa: A002
     """List all documents with stats."""
     configure_logging()
     try:

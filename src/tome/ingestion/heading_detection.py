@@ -256,6 +256,7 @@ def extract_headings_from_outline(
         owned_doc = doc is None
         if owned_doc:
             doc = fitz.open(file_path)
+        assert doc is not None  # noqa: S101  # noqa: S101
         toc = doc.get_toc(simple=True)  # Returns [[level, title, page], ...]
 
         headings = []
@@ -298,6 +299,7 @@ def extract_headings_from_toc_pages(  # noqa: C901
         owned_doc = doc is None
         if owned_doc:
             doc = fitz.open(file_path)
+        assert doc is not None  # noqa: S101  # noqa: S101
         toc_pages = []
 
         # Find pages containing "TABLE OF CONTENTS"
@@ -383,6 +385,7 @@ def extract_headings_by_typography(  # noqa: C901
         owned_doc = doc is None
         if owned_doc:
             doc = fitz.open(file_path)
+        assert doc is not None  # noqa: S101  # noqa: S101
         spans = []
 
         # Collect all text spans with their metadata
@@ -538,6 +541,7 @@ def merge_heading_detection_methods(
     owned_doc = doc is None
     if owned_doc:
         doc = fitz.open(file_path)
+    assert doc is not None  # noqa: S101
 
     all_headings = []
 
@@ -602,6 +606,7 @@ def detect_heading_patterns_from_file(
         owned_doc = doc is None
         if owned_doc:
             doc = fitz.open(file_path)
+        assert doc is not None  # noqa: S101  # noqa: S101
         headings = []
 
         for page_num in range(len(doc)):
@@ -631,7 +636,7 @@ def merge_heading_results(headings: list[dict[str, Any]]) -> list[dict[str, Any]
     Handles duplicates by keeping the highest confidence detection.
     """
     # Group by page and title (case-insensitive)
-    grouped = {}
+    grouped: dict[tuple[int, str], dict[str, Any]] = {}
 
     for heading in headings:
         # Handle different heading formats

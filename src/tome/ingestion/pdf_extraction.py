@@ -25,7 +25,7 @@ def extract_text_with_font_info(file_path: str) -> list[dict[str, Any]]:  # noqa
     all_headings = merge_heading_detection_methods(file_path, doc=doc)
 
     # Group headings by page
-    headings_by_page = {}
+    headings_by_page: dict[int, list[dict[str, Any]]] = {}
     for heading in all_headings:
         page_num = heading["page"]
         if page_num not in headings_by_page:
@@ -34,7 +34,7 @@ def extract_text_with_font_info(file_path: str) -> list[dict[str, Any]]:  # noqa
 
     # Analyze font sizes across all pages to determine heading
     # thresholds (for backward compatibility)
-    all_font_sizes = []
+    all_font_sizes: list[float] = []
     for page_num in range(len(doc)):
         page = doc.load_page(page_num)
         blocks = page.get_text("dict")["blocks"]
@@ -60,7 +60,7 @@ def extract_text_with_font_info(file_path: str) -> list[dict[str, Any]]:  # noqa
         headings = headings_by_page.get(page_num, [])
 
         # Convert advanced headings to the expected format
-        formatted_headings = []
+        formatted_headings: list[dict[str, Any]] = []
         for heading in headings:
             title = heading.get("title", heading.get("text", ""))
             formatted_headings.append(
@@ -75,7 +75,7 @@ def extract_text_with_font_info(file_path: str) -> list[dict[str, Any]]:  # noqa
             )
 
         # Extract text and find line numbers for headings
-        line_info = []
+        line_info: list[dict[str, Any]] = []
         for block in blocks:
             if "lines" in block:
                 for line in block["lines"]:

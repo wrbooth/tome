@@ -159,7 +159,10 @@ class TestReindexDocumentMeilisearch:
         ]
         with (
             patch("tome.documents.get_meili_client", return_value=mock_meili_client),
-            patch("tome.ingestion.ingest.extract_entities_and_years", return_value=([], [1865])),
+            patch(
+                "tome.ingestion.ingest.extract_entities_and_years",
+                return_value=([], [1865]),
+            ),
         ):
             result = reindex_document_meilisearch(mock_db_conn, "doc-1")
             assert result is True
@@ -178,9 +181,13 @@ class TestReindexDocumentMeilisearch:
         ]
         with (
             patch(
-                "tome.documents.get_meili_client", side_effect=Exception("Connection error")
+                "tome.documents.get_meili_client",
+                side_effect=Exception("Connection error"),
             ),
-            patch("tome.ingestion.ingest.extract_entities_and_years", return_value=([], [])),
+            patch(
+                "tome.ingestion.ingest.extract_entities_and_years",
+                return_value=([], []),
+            ),
         ):
             result = reindex_document_meilisearch(mock_db_conn, "doc-1")
             assert result is False

@@ -67,9 +67,7 @@ async def delete_document(document_id: str):
                 )
                 deleted = cur.fetchone()
                 if not deleted:
-                    raise HTTPException(
-                        status_code=404, detail="Document not found"
-                    )
+                    raise HTTPException(status_code=404, detail="Document not found")
             conn.commit()
 
         if passage_ids:

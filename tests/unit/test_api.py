@@ -141,7 +141,10 @@ class TestSearchEndpoint:
 
         from tome.api.app import app
 
-        with patch("tome.api.routes.search.search_codex", side_effect=Exception("Search failed")):
+        with patch(
+            "tome.api.routes.search.search_codex",
+            side_effect=Exception("Search failed"),
+        ):
             client = TestClient(app)
             response = client.post("/api/search", json={"query": "test"})
             assert response.status_code == 500
@@ -211,13 +214,20 @@ class TestSearchStreamEndpoint:
         with (
             patch("tome.api.routes.search.analyze_query", return_value=mock_analysis),
             patch("tome.api.routes.search.hybrid_search", return_value=[("p1", 0.9)]),
-            patch("tome.api.routes.search.rerank_candidates", return_value=[("p1", 0.9)]),
-            patch("tome.api.routes.search.get_passage_details", return_value=mock_details),
+            patch(
+                "tome.api.routes.search.rerank_candidates", return_value=[("p1", 0.9)]
+            ),
+            patch(
+                "tome.api.routes.search.get_passage_details", return_value=mock_details
+            ),
             patch(
                 "tome.api.routes.search.stream_answer_with_llm",
                 return_value=iter(["Hello", " world"]),
             ),
-            patch("tome.api.routes.search.db_connection", make_mock_db_connection(MagicMock())),
+            patch(
+                "tome.api.routes.search.db_connection",
+                make_mock_db_connection(MagicMock()),
+            ),
         ):
             client = TestClient(app)
             response = client.post(
@@ -297,7 +307,10 @@ class TestDocumentsEndpoint:
         ]
         mock_conn.cursor.return_value = mock_cursor
 
-        with patch("tome.api.routes.documents.db_connection", make_mock_db_connection(mock_conn)):
+        with patch(
+            "tome.api.routes.documents.db_connection",
+            make_mock_db_connection(mock_conn),
+        ):
             client = TestClient(app)
             response = client.get("/api/documents")
             assert response.status_code == 200
@@ -308,7 +321,9 @@ class TestDocumentsEndpoint:
 
         from tome.api.app import app
 
-        with patch("tome.api.routes.documents.db_connection", side_effect=Exception("DB down")):
+        with patch(
+            "tome.api.routes.documents.db_connection", side_effect=Exception("DB down")
+        ):
             client = TestClient(app)
             response = client.get("/api/documents")
             assert response.status_code == 500
@@ -337,8 +352,13 @@ class TestDocumentDetailEndpoint:
             "pages": {"min_page": 1, "max_page": 80},
         }
         with (
-            patch("tome.api.routes.documents.db_connection", make_mock_db_connection(MagicMock())),
-            patch("tome.api.routes.documents.get_document_stats", return_value=mock_stats),
+            patch(
+                "tome.api.routes.documents.db_connection",
+                make_mock_db_connection(MagicMock()),
+            ),
+            patch(
+                "tome.api.routes.documents.get_document_stats", return_value=mock_stats
+            ),
         ):
             client = TestClient(app)
             response = client.get("/api/documents/d1")
@@ -354,7 +374,10 @@ class TestDocumentDetailEndpoint:
         from tome.api.app import app
 
         with (
-            patch("tome.api.routes.documents.db_connection", make_mock_db_connection(MagicMock())),
+            patch(
+                "tome.api.routes.documents.db_connection",
+                make_mock_db_connection(MagicMock()),
+            ),
             patch("tome.api.routes.documents.get_document_stats", return_value=None),
         ):
             client = TestClient(app)
@@ -366,7 +389,9 @@ class TestDocumentDetailEndpoint:
 
         from tome.api.app import app
 
-        with patch("tome.api.routes.documents.db_connection", side_effect=Exception("DB error")):
+        with patch(
+            "tome.api.routes.documents.db_connection", side_effect=Exception("DB error")
+        ):
             client = TestClient(app)
             response = client.get("/api/documents/d1")
             assert response.status_code == 500
@@ -395,8 +420,14 @@ class TestDeleteDocumentEndpoint:
         mock_meili_client.index.return_value = mock_meili_index
 
         with (
-            patch("tome.api.routes.documents.db_connection", make_mock_db_connection(mock_conn)),
-            patch("tome.api.routes.documents.get_meili_client", return_value=mock_meili_client),
+            patch(
+                "tome.api.routes.documents.db_connection",
+                make_mock_db_connection(mock_conn),
+            ),
+            patch(
+                "tome.api.routes.documents.get_meili_client",
+                return_value=mock_meili_client,
+            ),
         ):
             client = TestClient(app)
             response = client.delete(
@@ -421,8 +452,13 @@ class TestDeleteDocumentEndpoint:
         mock_cursor.fetchone.return_value = None
 
         with (
-            patch("tome.api.routes.documents.db_connection", make_mock_db_connection(mock_conn)),
-            patch("tome.api.routes.documents.get_meili_client", return_value=MagicMock()),
+            patch(
+                "tome.api.routes.documents.db_connection",
+                make_mock_db_connection(mock_conn),
+            ),
+            patch(
+                "tome.api.routes.documents.get_meili_client", return_value=MagicMock()
+            ),
         ):
             client = TestClient(app)
             response = client.delete(
@@ -459,8 +495,14 @@ class TestDeleteDocumentEndpoint:
         )
 
         with (
-            patch("tome.api.routes.documents.db_connection", make_mock_db_connection(mock_conn)),
-            patch("tome.api.routes.documents.get_meili_client", return_value=mock_meili_client),
+            patch(
+                "tome.api.routes.documents.db_connection",
+                make_mock_db_connection(mock_conn),
+            ),
+            patch(
+                "tome.api.routes.documents.get_meili_client",
+                return_value=mock_meili_client,
+            ),
         ):
             client = TestClient(app)
             response = client.delete(
@@ -579,7 +621,10 @@ class TestStatsEndpoint:
         ]
         mock_conn.cursor.return_value = mock_cursor
 
-        with patch("tome.api.routes.documents.db_connection", make_mock_db_connection(mock_conn)):
+        with patch(
+            "tome.api.routes.documents.db_connection",
+            make_mock_db_connection(mock_conn),
+        ):
             client = TestClient(app)
             response = client.get("/api/stats")
             assert response.status_code == 200
@@ -605,7 +650,10 @@ class TestStatsEndpoint:
         ]
         mock_conn.cursor.return_value = mock_cursor
 
-        with patch("tome.api.routes.documents.db_connection", make_mock_db_connection(mock_conn)):
+        with patch(
+            "tome.api.routes.documents.db_connection",
+            make_mock_db_connection(mock_conn),
+        ):
             client = TestClient(app)
             response = client.get("/api/stats")
             assert response.status_code == 200
