@@ -43,6 +43,7 @@ tome-documents = "tome.documents:cli"
 [tool.pytest.ini_options]
 testpaths = ["tests/unit", "tests/integration"]
 markers = ["integration: integration tests requiring live services"]
+addopts = "-n 4"
 
 [tool.ruff]
 line-length = 88
@@ -86,4 +87,5 @@ dev = [
     "pytest-mock>=3.15.1",
     "ruff>=0.8.0",
     "mypy>=1.13.0",
+    "pytest-xdist>=3.8.0",
 ]

@@ -1,6 +1,6 @@
 # Tome
 
-A document indexing and search system. Ingests PDFs and text files, chunks them with heading-aware splitting, stores in PostgreSQL (pgvector) + Meilisearch, and provides hybrid search (semantic + keyword) with cross-encoder reranking and LLM answer generation.
+A document indexing and search system. Ingests PDFs and text files, chunks them with heading-aware splitting, stores structured data in PostgreSQL and indexes passages in Meilisearch, then provides hybrid search (semantic + keyword) with cross-encoder reranking and LLM answer generation.
 
 ## Features
 
@@ -54,12 +54,16 @@ uv sync --all-groups
 ### 2. Start services
 
 ```bash
+docker compose build
 docker compose up -d
 ```
 
 This starts:
 - **PostgreSQL 16** on port 5432 (passages, entities, metadata)
 - **Meilisearch** on port 7700 (hybrid BM25 + vector search with auto-generated OpenAI embeddings)
+- **Tome API** on port 8000 (FastAPI with web UI)
+
+> To run only the infrastructure (Postgres + Meilisearch) and develop locally, use `docker compose up -d postgres meili` and run the API with `uv run uvicorn tome.api.app:app --reload`.
 
 ### 3. Set up the database
 
@@ -69,10 +73,9 @@ psql postgresql://tome:tome@localhost:5432/tome -f sql/schema.sql
 
 ### 4. Configure environment
 
-Create a `.env` file in the project root:
-
 ```bash
-OPENAI_API_KEY=your_openai_api_key_here
+cp .env.example .env
+# Edit .env and add your OpenAI API key
 ```
 
 Default database and Meilisearch settings connect to the Docker Compose services out of the box. See [Configuration](#configuration) for all options.
@@ -137,6 +140,8 @@ Configuration is managed via environment variables or a `.env` file. All setting
 ## Project Structure
 
 ```
+Dockerfile                   # API container build
+docker-compose.yml           # Full stack (Postgres + Meilisearch + API)
 src/tome/                   # Main package (src layout)
   config.py                  # Pydantic BaseSettings configuration
   models.py                  # Shared Pydantic data models
@@ -154,7 +159,7 @@ src/tome/                   # Main package (src layout)
     search.py                # Hybrid search + reranking + CLI
     answer_generator.py      # LLM answer generation
   api/                       # FastAPI application
-    app.py                   # App factory, middleware, SPA serving
+    app.py                   # App factory, request logging, SPA serving
     routes/
       search.py              # Search + streaming endpoints
       documents.py           # Document CRUD + stats endpoints
@@ -180,6 +185,21 @@ uv run pytest tests/unit/ --cov=src --cov-report=term-missing
 
 # Integration tests (requires running Docker services)
 uv run pytest tests/integration/ -v
+```
+
+### RAG evaluation harness
+
+`tests/integration/test_search.py` is an end-to-end evaluation suite that measures both **retrieval quality** and **answer accuracy** against 20 curated questions with known expected pages and answers.
+
+- **Retrieval quality** — grades where the expected page lands in ranked results (EXCELLENT at rank 1-3, down to FAILED if not found in top-k)
+- **Answer accuracy** — uses an LLM judge to compare generated answers against expected answers, with a heuristic fallback when the judge is unavailable
+
+```bash
+# Run the full eval suite
+uv run pytest tests/integration/test_search.py -v
+
+# Run a single question by keyword
+uv run pytest tests/integration/test_search.py -v -k "morgan"
 ```
 
 ### Linting

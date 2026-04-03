@@ -4,6 +4,8 @@ Tome API Application
 FastAPI app with search, document management, and streaming endpoints.
 """
 
+import logging
+import time
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -16,8 +18,43 @@ from starlette.requests import Request
 from tome.api.routes.documents import router as documents_router
 from tome.api.routes.search import router as search_router
 from tome.api.routes.upload import router as upload_router
+from tome.config import configure_logging
+
+configure_logging()
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Tome Search API", version="2.0.0")
+
+
+# ---------------------------------------------------------------------------
+# Request logging middleware
+# ---------------------------------------------------------------------------
+
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """Log every request with method, path, status, and duration."""
+
+    async def dispatch(self, request: Request, call_next):
+        start = time.perf_counter()
+        response = await call_next(request)
+        duration_ms = (time.perf_counter() - start) * 1000
+
+        # Skip noisy static-file and health-check requests
+        path = request.url.path
+        if path.startswith("/static/") or path == "/api/health":
+            return response
+
+        logger.info(
+            "%s %s → %d (%.0fms)",
+            request.method,
+            path,
+            response.status_code,
+            duration_ms,
+        )
+        return response
+
+
+app.add_middleware(RequestLoggingMiddleware)
 
 # CORS -- allow all origins during development
 app.add_middleware(
