@@ -24,7 +24,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 from psycopg2.extras import RealDictCursor
 
-from config import db_connection
+from config import db_connection, get_meili_client
 from documents import get_system_stats, get_document_stats
 from search import search_codex, analyze_query, hybrid_search, rerank_candidates, get_passage_details
 from answer_generator import stream_answer_with_llm
@@ -272,6 +272,44 @@ async def get_document_detail(document_id: str):
         raise HTTPException(status_code=404, detail="Document not found")
 
     return stats
+
+
+@router.delete("/documents/{document_id}")
+async def delete_document(document_id: str):
+    """Delete a document and all its passages, entities, and years."""
+    try:
+        uuid.UUID(document_id)
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=400, detail="Invalid document ID")
+
+    try:
+        with db_connection() as conn:
+            with conn.cursor() as cur:
+                # Get passage IDs for Meilisearch cleanup
+                cur.execute("SELECT id FROM passages WHERE document_id = %s", (document_id,))
+                passage_ids = [str(row[0]) for row in cur.fetchall()]
+
+                # Delete from Postgres (cascades to passages, entities, years)
+                cur.execute("DELETE FROM documents WHERE id = %s RETURNING id", (document_id,))
+                deleted = cur.fetchone()
+                if not deleted:
+                    raise HTTPException(status_code=404, detail="Document not found")
+            conn.commit()
+
+        # Clean up Meilisearch index (best-effort)
+        if passage_ids:
+            try:
+                client = get_meili_client()
+                client.index("passages").delete_documents(passage_ids)
+            except Exception as e:
+                logger.warning("Meilisearch cleanup failed (non-fatal): %s", e)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {"status": "deleted", "document_id": document_id}
 
 
 @router.post("/documents/upload", status_code=202, response_model=IngestTaskInfo)

@@ -268,6 +268,80 @@ class TestDocumentDetailEndpoint:
             assert response.status_code == 500
 
 
+# ── DELETE /api/documents/{document_id} ──────────────────────────────────
+
+class TestDeleteDocumentEndpoint:
+    def test_deletes_document_successfully(self):
+        from api.main import app
+        from fastapi.testclient import TestClient
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn.cursor.return_value = mock_cursor
+        # First call: get passage IDs; second call: delete document
+        mock_cursor.fetchall.return_value = [("p1",), ("p2",)]
+        mock_cursor.fetchone.return_value = ("d1-uuid",)
+
+        mock_meili_index = MagicMock()
+        mock_meili_client = MagicMock()
+        mock_meili_client.index.return_value = mock_meili_index
+
+        with patch("api.main.db_connection", make_mock_db_connection(mock_conn)), \
+             patch("api.main.get_meili_client", return_value=mock_meili_client):
+            client = TestClient(app)
+            response = client.delete("/api/documents/550e8400-e29b-41d4-a716-446655440000")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "deleted"
+            mock_meili_index.delete_documents.assert_called_once_with(["p1", "p2"])
+
+    def test_delete_not_found(self):
+        from api.main import app
+        from fastapi.testclient import TestClient
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.fetchall.return_value = []
+        mock_cursor.fetchone.return_value = None
+
+        with patch("api.main.db_connection", make_mock_db_connection(mock_conn)), \
+             patch("api.main.get_meili_client", return_value=MagicMock()):
+            client = TestClient(app)
+            response = client.delete("/api/documents/550e8400-e29b-41d4-a716-446655440000")
+            assert response.status_code == 404
+
+    def test_delete_invalid_id(self):
+        from api.main import app
+        from fastapi.testclient import TestClient
+        client = TestClient(app)
+        response = client.delete("/api/documents/not-a-uuid")
+        assert response.status_code == 400
+        assert "Invalid document ID" in response.json()["detail"]
+
+    def test_delete_succeeds_even_if_meili_fails(self):
+        from api.main import app
+        from fastapi.testclient import TestClient
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.fetchall.return_value = [("p1",)]
+        mock_cursor.fetchone.return_value = ("d1-uuid",)
+
+        mock_meili_client = MagicMock()
+        mock_meili_client.index.return_value.delete_documents.side_effect = Exception("Meili down")
+
+        with patch("api.main.db_connection", make_mock_db_connection(mock_conn)), \
+             patch("api.main.get_meili_client", return_value=mock_meili_client):
+            client = TestClient(app)
+            response = client.delete("/api/documents/550e8400-e29b-41d4-a716-446655440000")
+            assert response.status_code == 200
+
+
 # ── POST /api/documents/upload ───────────────────────────────────────────
 
 class TestUploadEndpoint:

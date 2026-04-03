@@ -80,6 +80,46 @@
     display: none;
 }
 
+/* Sidebar collapse/expand */
+#sidebar {
+    transition: width 200ms ease, opacity 150ms ease, padding 200ms ease, border-width 200ms ease;
+    min-width: 0;
+}
+#sidebar.collapsed {
+    width: 0 !important;
+    opacity: 0;
+    overflow: hidden;
+    padding: 0;
+    border-right-width: 0;
+}
+
+/* Drag-and-drop zone active state */
+#drop-zone.drag-over {
+    border-color: #3b82f6;
+    background-color: rgba(59, 130, 246, 0.08);
+}
+
+/* Upload spinner */
+.upload-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid #dbeafe;
+    border-top-color: #3b82f6;
+    border-radius: 50%;
+    animation: upload-spin 0.6s linear infinite;
+}
+@keyframes upload-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Upload modal */
+.upload-modal {
+    margin: auto;
+}
+.upload-modal::backdrop {
+    background: rgba(0, 0, 0, 0.4);
+}
+
 /* Result card details marker override */
 .result-card summary::marker,
 .result-card summary::-webkit-details-marker {

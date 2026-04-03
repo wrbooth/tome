@@ -293,7 +293,10 @@
             var resp = await fetch('/api/search/stream', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ query: query }),
+                body: JSON.stringify({
+                    query: query,
+                    document_id: window.Codex && window.Codex.activeDocumentId || null,
+                }),
             });
 
             if (!resp.ok) {
@@ -322,6 +325,10 @@
     // ── New chat ─────────────────────────────────────────────────────────
 
     newChatBtn.addEventListener('click', function () {
+        // Clear document filter if active
+        if (window.Codex && window.Codex.clearDocumentFilter) {
+            window.Codex.clearDocumentFilter();
+        }
         var container = getMessageContainer();
         container.innerHTML =
             '<div id="welcome" class="text-center mt-24 space-y-3">' +
