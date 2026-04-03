@@ -407,8 +407,21 @@ async def get_stats():
 app.include_router(router)
 
 # ---------------------------------------------------------------------------
-# Static file serving (SPA)
+# Static file serving (SPA) — no-cache in development
 # ---------------------------------------------------------------------------
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+
+class NoCacheStaticMiddleware(BaseHTTPMiddleware):
+    """Add no-cache headers to static file responses for development."""
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith("/static/") or request.url.path == "/":
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        return response
+
+app.add_middleware(NoCacheStaticMiddleware)
 
 _static_dir = Path(__file__).parent / "static"
 if _static_dir.is_dir():

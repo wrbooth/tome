@@ -62,22 +62,51 @@
 .prose strong { font-weight: 600; }
 .prose a { color: #2563eb; text-decoration: underline; }
 
-/* Source citation details — inline expandable */
-.source-citation summary {
-    display: inline;
-    cursor: pointer;
+/* Superscript citation links */
+.source-ref {
     color: #2563eb;
-    text-decoration: underline;
-    text-decoration-style: dotted;
-    text-underline-offset: 2px;
-    font-weight: 500;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.75em;
+    vertical-align: super;
+    line-height: 0;
+    padding: 0 1px;
+    border-radius: 2px;
+    transition: background-color 150ms ease;
 }
-.source-citation summary:hover {
+.source-ref:hover {
+    background-color: #dbeafe;
     color: #1d4ed8;
 }
-.source-citation summary::marker,
-.source-citation summary::-webkit-details-marker {
-    display: none;
+
+/* Source panel slide-out */
+#source-panel {
+    transition: width 200ms ease, opacity 150ms ease;
+    min-width: 0;
+    width: 0;
+}
+#source-panel.source-panel-closed {
+    width: 0 !important;
+    opacity: 0;
+    overflow: hidden;
+    border-left-width: 0;
+}
+#source-panel.source-panel-open {
+    width: 420px;
+    opacity: 1;
+}
+
+/* Source card in panel */
+.source-card {
+    border-bottom: 1px solid #f1f5f9;
+    transition: background-color 150ms ease;
+}
+.source-card.source-active {
+    background-color: #eff6ff;
+    border-left: 3px solid #3b82f6;
+}
+.source-card:not(.source-active) {
+    border-left: 3px solid transparent;
 }
 
 /* Document list item — show info icon on hover, subtle separator */
