@@ -35,7 +35,7 @@ class TestGetDocumentStats:
                 "source_path": "/path",
             },
             # passage stats
-            {"total_passages": 10, "embedded_passages": 8},
+            {"total_passages": 10},
             # entity stats
             {"entity_count": 50},
             # year stats
@@ -73,7 +73,6 @@ class TestListDocuments:
                 "authors": None,
                 "pub_year": 2000,
                 "passage_count": 5,
-                "embedded_count": 3,
                 "min_page": 1,
                 "max_page": 10,
             },
@@ -208,7 +207,6 @@ class TestListCliCommand:
                 "authors": None,
                 "pub_year": 2000,
                 "passage_count": 5,
-                "embedded_count": 3,
                 "min_page": 1,
                 "max_page": 10,
             }
@@ -228,7 +226,6 @@ class TestListCliCommand:
                 "authors": ["Author X"],
                 "pub_year": 2000,
                 "passage_count": 5,
-                "embedded_count": 3,
                 "min_page": 1,
                 "max_page": 10,
             }
@@ -271,7 +268,7 @@ class TestInfoCliCommand:
                 "pub_year": 2000,
                 "source_path": "/path",
             },
-            {"total_passages": 10, "embedded_passages": 8},
+            {"total_passages": 10},
             {"entity_count": 50},
             {"year_count": 15},
             {"min_page": 1, "max_page": 20},
@@ -296,7 +293,7 @@ class TestInfoCliCommand:
                 "pub_year": 2000,
                 "source_path": "/path",
             },
-            {"total_passages": 10, "embedded_passages": 8},
+            {"total_passages": 10},
             {"entity_count": 50},
             {"year_count": 15},
             {"min_page": 1, "max_page": 20},
@@ -307,7 +304,6 @@ class TestInfoCliCommand:
             result = runner.invoke(cli, ["info", "d1"])
             assert result.exit_code == 0
             assert "Doc Title" in result.output
-            assert "80.0%" in result.output  # embedding coverage
 
     def test_info_not_found(self):
         mock_conn = MagicMock()
@@ -388,7 +384,6 @@ class TestStatsCliCommand:
         cursor.fetchone.side_effect = [
             (10,),  # documents
             (100,),  # passages
-            (80,),  # embedded
             (500,),  # entities
             (50,),  # years
         ]
@@ -399,20 +394,18 @@ class TestStatsCliCommand:
             assert result.exit_code == 0
             assert "Documents: 10" in result.output
             assert "Passages: 100" in result.output
-            assert "80.0%" in result.output
 
     def test_stats_zero_passages(self):
         mock_conn = MagicMock()
         cursor = MagicMock()
         cursor.__enter__ = MagicMock(return_value=cursor)
         cursor.__exit__ = MagicMock(return_value=False)
-        cursor.fetchone.side_effect = [(0,), (0,), (0,), (0,), (0,)]
+        cursor.fetchone.side_effect = [(0,), (0,), (0,), (0,)]
         mock_conn.cursor.return_value = cursor
         runner = CliRunner()
         with patch("tome.documents.db_connection", make_mock_db_connection(mock_conn)):
             result = runner.invoke(cli, ["stats"])
             assert result.exit_code == 0
-            # Should not show embedding coverage when 0 passages
 
     def test_stats_error(self):
         runner = CliRunner()

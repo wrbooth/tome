@@ -10,7 +10,6 @@ requires-python = ">=3.10,<3.14"
 dependencies = [
     "pymupdf>=1.26.3",
     "psycopg2-binary>=2.9.10",
-    "pgvector>=0.4.1",
     "meilisearch>=0.37.0",
     "openai>=2.0.0",
     "sentence-transformers>=5.1.0",
@@ -39,7 +38,6 @@ tome-ingest = "tome.ingestion.ingest:main"
 tome-batch-ingest = "tome.ingestion.batch_ingest:main"
 tome-batch-reingest = "tome.ingestion.batch_reingest:main"
 tome-search = "tome.search.search:main"
-tome-embed = "tome.search.embed:main"
 tome-documents = "tome.documents:cli"
 
 [tool.pytest.ini_options]

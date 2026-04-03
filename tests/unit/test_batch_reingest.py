@@ -14,7 +14,6 @@ from tome.ingestion.batch_reingest import (
     list_all_documents,
     main,
     reingest_document,
-    run_embedding,
 )
 
 # ── clear_database ────────────────────────────────────────────────────────
@@ -198,33 +197,6 @@ class TestReingestDocument:
             assert result is False
 
 
-# ── run_embedding ─────────────────────────────────────────────────────────
-
-
-class TestRunEmbedding:
-    def test_success(self):
-        with patch("tome.search.embed.run_embeddings", return_value=True) as mock_embed:
-            result = run_embedding()
-            assert result is True
-            mock_embed.assert_called_once_with(None)
-
-    def test_with_document_ids(self):
-        with patch("tome.search.embed.run_embeddings", return_value=True) as mock_embed:
-            result = run_embedding(["doc-1", "doc-2"])
-            assert result is True
-            mock_embed.assert_called_once_with(["doc-1", "doc-2"])
-
-    def test_failure(self):
-        with patch("tome.search.embed.run_embeddings", return_value=False):
-            result = run_embedding()
-            assert result is False
-
-    def test_exception(self):
-        with patch("tome.search.embed.run_embeddings", side_effect=Exception("Error")):
-            result = run_embedding()
-            assert result is False
-
-
 # ── CLI main ──────────────────────────────────────────────────────────────
 
 
@@ -253,7 +225,6 @@ class TestMainCli:
             caplog.at_level("INFO", logger="tome.ingestion.batch_reingest"),
             patch("tome.ingestion.batch_reingest.list_all_documents", return_value=docs),
             patch("tome.ingestion.batch_reingest.reingest_document", return_value=True),
-            patch("tome.ingestion.batch_reingest.run_embedding", return_value=True),
             patch("pathlib.Path.exists", return_value=True),
         ):
             runner.invoke(main, ["--all"])
@@ -274,7 +245,6 @@ class TestMainCli:
             patch("tome.ingestion.batch_reingest.db_connection", make_mock_db_connection(mock_conn)),
             patch("tome.ingestion.batch_reingest.get_document_info", return_value=doc_info),
             patch("tome.ingestion.batch_reingest.reingest_document", return_value=True),
-            patch("tome.ingestion.batch_reingest.run_embedding", return_value=True),
             patch("pathlib.Path.exists", return_value=True),
         ):
             runner.invoke(main, ["d1"])
@@ -313,7 +283,6 @@ class TestMainCli:
             patch("tome.ingestion.batch_reingest.clear_database") as mock_clear_db,
             patch("tome.ingestion.batch_reingest.clear_meilisearch") as mock_clear_ms,
             patch("tome.ingestion.batch_reingest.reingest_document", return_value=True),
-            patch("tome.ingestion.batch_reingest.run_embedding", return_value=True),
             patch("pathlib.Path.exists", return_value=True),
         ):
             runner.invoke(main, ["--all", "--clear-first"])
@@ -335,31 +304,10 @@ class TestMainCli:
             patch("tome.ingestion.batch_reingest.list_all_documents", return_value=docs),
             patch("tome.ingestion.batch_reingest.clear_documents") as mock_clear,
             patch("tome.ingestion.batch_reingest.reingest_document", return_value=True),
-            patch("tome.ingestion.batch_reingest.run_embedding", return_value=True),
             patch("pathlib.Path.exists", return_value=True),
         ):
             runner.invoke(main, ["--all", "--clear-docs", "d1,d2"])
             mock_clear.assert_called_once_with(["d1", "d2"])
-
-    def test_skip_embedding_flag(self):
-        docs = [
-            {
-                "id": "d1",
-                "title": "Doc",
-                "source_path": "/tmp/test.pdf",
-                "authors": None,
-                "pub_year": None,
-            }
-        ]
-        runner = CliRunner()
-        with (
-            patch("tome.ingestion.batch_reingest.list_all_documents", return_value=docs),
-            patch("tome.ingestion.batch_reingest.reingest_document", return_value=True),
-            patch("tome.ingestion.batch_reingest.run_embedding") as mock_embed,
-            patch("pathlib.Path.exists", return_value=True),
-        ):
-            runner.invoke(main, ["--all", "--skip-embedding"])
-            mock_embed.assert_not_called()
 
     def test_source_file_not_found(self, caplog):
         docs = [
@@ -377,7 +325,7 @@ class TestMainCli:
             patch("tome.ingestion.batch_reingest.list_all_documents", return_value=docs),
             patch("pathlib.Path.exists", return_value=False),
         ):
-            runner.invoke(main, ["--all", "--skip-embedding"])
+            runner.invoke(main, ["--all"])
         assert "Source file not found" in caplog.text
         assert "Failed: 1" in caplog.text
 
@@ -398,27 +346,6 @@ class TestMainCli:
             patch("tome.ingestion.batch_reingest.reingest_document", return_value=False),
             patch("pathlib.Path.exists", return_value=True),
         ):
-            result = runner.invoke(main, ["--all", "--skip-embedding"])
+            result = runner.invoke(main, ["--all"])
         assert "Failed: 1" in caplog.text
         assert result.exit_code == 1
-
-    def test_embedding_for_specific_docs(self):
-        runner = CliRunner()
-        mock_conn = MagicMock()
-        doc_info = {
-            "id": "d1",
-            "title": "Doc",
-            "source_path": "/tmp/test.pdf",
-            "authors": None,
-            "pub_year": None,
-        }
-        with (
-            patch("tome.ingestion.batch_reingest.db_connection", make_mock_db_connection(mock_conn)),
-            patch("tome.ingestion.batch_reingest.get_document_info", return_value=doc_info),
-            patch("tome.ingestion.batch_reingest.reingest_document", return_value=True),
-            patch("tome.ingestion.batch_reingest.run_embedding", return_value=True) as mock_embed,
-            patch("pathlib.Path.exists", return_value=True),
-        ):
-            runner.invoke(main, ["d1"])
-            # Should pass doc IDs, not None
-            mock_embed.assert_called_once_with(["d1"])

@@ -1,5 +1,3 @@
-create extension if not exists vector;
-
 create table if not exists documents (
   id uuid primary key,
   title text not null,
@@ -13,8 +11,7 @@ create table if not exists passages (
   document_id uuid references documents(id) on delete cascade,
   page int not null,
   headings_path text[],
-  text text not null,
-  embedding vector(1536)
+  text text not null
 );
 
 create table if not exists passage_entities (
@@ -32,7 +29,6 @@ create table if not exists passage_years (
 );
 
 create index if not exists idx_passages_tsv on passages using gin (to_tsvector('simple', text));
-create index if not exists idx_passages_vec on passages using ivfflat (embedding vector_cosine_ops) with (lists = 100);
 create index on passage_entities (entity, ent_type);
 create index on passage_years (year);
 

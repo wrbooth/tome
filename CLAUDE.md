@@ -12,14 +12,13 @@ uv run tome-ingest <file> --title "..."              # Ingest a document
 uv run tome-batch-reingest --all --clear-first       # Full reingest
 uv run tome-search --q "query" --k 20                # Search
 uv run tome-documents list                           # List documents
-uv run tome-embed --provider openai                  # Generate embeddings
 
 uv run uvicorn tome.api.app:app --reload             # Run API server
 ```
 
 ## What This Is
 
-A historical document indexing and search system. Ingests PDFs/TXT files, chunks them with heading-aware splitting, stores in PostgreSQL (pgvector) + Meilisearch, and provides hybrid search (semantic + keyword) with cross-encoder reranking and LLM answer generation.
+A historical document indexing and search system. Ingests PDFs/TXT files, chunks them with heading-aware splitting, stores in PostgreSQL + Meilisearch (which handles hybrid BM25 + vector search with auto-generated OpenAI embeddings), and provides cross-encoder reranking and LLM answer generation.
 
 ## Project Structure
 
@@ -39,7 +38,6 @@ src/tome/                  # Main package (src layout)
     storage.py              # Postgres + Meilisearch storage
   search/                   # Search and retrieval
     search.py               # Hybrid search + reranking + CLI
-    embed.py                # Embedding generation + CLI
     answer_generator.py     # LLM answer generation
   api/                      # FastAPI application
     app.py                  # App factory, middleware, SPA serving
@@ -66,9 +64,9 @@ docs/                       # Design docs and guides
 ## External Services
 
 Requires Docker Compose services to be running for ingestion/search:
-- **PostgreSQL 16 + pgvector** (port 5432) -- passages, embeddings, entities
-- **Meilisearch** (port 7700) -- hybrid keyword+semantic search
-- **OpenAI API** -- embeddings (text-embedding-3-small), query analysis (gpt-4o-mini), answers (gpt-5-mini)
+- **PostgreSQL 16** (port 5432) -- passages, entities, document metadata
+- **Meilisearch** (port 7700) -- hybrid BM25 + vector search (auto-generates embeddings via OpenAI)
+- **OpenAI API** -- embeddings via Meilisearch (text-embedding-3-small), query analysis (gpt-4o-mini), answers (gpt-5-mini)
 
 ## Gotchas
 

@@ -131,24 +131,6 @@ def reingest_document(
         return False
 
 
-def run_embedding(document_ids: list[str] | None = None):
-    """Run the embedding process."""
-    logger.info("Running embedding process...")
-
-    try:
-        from tome.search.embed import run_embeddings
-
-        success = run_embeddings(document_ids)
-        if success:
-            logger.info("Embedding completed successfully")
-        else:
-            logger.error("Embedding generation failed")
-        return success
-    except Exception as e:
-        logger.error("Error running embedding: %s", e)
-        return False
-
-
 @click.command()
 @click.argument("documents", nargs=-1)
 @click.option("--all", is_flag=True, help="Re-ingest all documents")
@@ -156,14 +138,12 @@ def run_embedding(document_ids: list[str] | None = None):
     "--clear-first", is_flag=True, help="Clear database and Meilisearch first"
 )
 @click.option("--clear-docs", help="Comma-separated list of document IDs to clear")
-@click.option("--skip-embedding", is_flag=True, help="Skip embedding generation")
 @click.option("--debug", is_flag=True, help="Show debug information")
 def main(  # noqa: C901
     documents: list[str],
     all: bool,  # noqa: A002
     clear_first: bool,
     clear_docs: str | None,
-    skip_embedding: bool,
     debug: bool,
 ):
     """Batch re-ingest documents."""
@@ -252,23 +232,6 @@ def main(  # noqa: C901
         for _, doc in enumerate(documents_to_process):
             if not Path(doc["source_path"]).exists():
                 logger.info("  - %s: Source file not found", doc["title"])
-
-    # Run embedding if requested
-    if not skip_embedding and successful > 0:
-        logger.info("Generating embeddings...")
-
-        if all:
-            # Generate embeddings for all documents
-            embedding_success = run_embedding()
-        else:
-            # Generate embeddings for specific documents
-            doc_ids = [doc["id"] for doc in documents_to_process]
-            embedding_success = run_embedding(doc_ids)
-
-        if embedding_success:
-            logger.info("Embedding generation completed")
-        else:
-            logger.error("Embedding generation failed")
 
     logger.info("=== Re-ingestion Complete ===")
 

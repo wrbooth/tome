@@ -331,7 +331,7 @@ class TestDocumentDetailEndpoint:
                 "pub_year": 2000,
                 "source_path": "/path",
             },
-            "passages": {"total_passages": 50, "embedded_passages": 45},
+            "passages": {"total_passages": 50},
             "entities": {"entity_count": 120},
             "years": {"year_count": 15},
             "pages": {"min_page": 1, "max_page": 80},
@@ -574,7 +574,6 @@ class TestStatsEndpoint:
         mock_cursor.fetchone.side_effect = [
             (10,),  # doc count
             (100,),  # passage count
-            (80,),  # embedded count
             (500,),  # entity count
             (50,),  # year count
         ]
@@ -587,8 +586,6 @@ class TestStatsEndpoint:
             data = response.json()
             assert data["documents"] == 10
             assert data["passages"] == 100
-            assert data["embedded_passages"] == 80
-            assert data["embedding_coverage"] == "80.0%"
             assert data["years"] == 50
 
     def test_zero_passages_coverage(self):
@@ -603,7 +600,6 @@ class TestStatsEndpoint:
         mock_cursor.fetchone.side_effect = [
             (0,),  # doc count
             (0,),  # passage count
-            (0,),  # embedded count
             (0,),  # entity count
             (0,),  # year count
         ]
@@ -613,7 +609,6 @@ class TestStatsEndpoint:
             client = TestClient(app)
             response = client.get("/api/stats")
             assert response.status_code == 200
-            assert response.json()["embedding_coverage"] == "0%"
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────

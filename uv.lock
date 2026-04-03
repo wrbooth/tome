@@ -1292,19 +1292,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pgvector"
-version = "0.4.2"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/25/6c/6d8b4b03b958c02fa8687ec6063c49d952a189f8c91ebbe51e877dfab8f7/pgvector-0.4.2.tar.gz", hash = "sha256:322cac0c1dc5d41c9ecf782bd9991b7966685dee3a00bc873631391ed949513a", size = 31354, upload-time = "2025-12-05T01:07:17.87Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/5a/26/6cee8a1ce8c43625ec561aff19df07f9776b7525d9002c86bceb3e0ac970/pgvector-0.4.2-py3-none-any.whl", hash = "sha256:549d45f7a18593783d5eec609ea1684a724ba8405c4cb182a0b2b08aeff04e08", size = 27441, upload-time = "2025-12-05T01:07:16.536Z" },
-]
-
-[[package]]
 name = "pluggy"
 version = "1.6.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2466,7 +2453,6 @@ dependencies = [
     { name = "langdetect" },
     { name = "meilisearch" },
     { name = "openai" },
-    { name = "pgvector" },
     { name = "psycopg2-binary" },
     { name = "pydantic-settings" },
     { name = "pymupdf" },
@@ -2497,7 +2483,6 @@ requires-dist = [
     { name = "langdetect", specifier = ">=1.0.9" },
     { name = "meilisearch", specifier = ">=0.37.0" },
     { name = "openai", specifier = ">=2.0.0" },
-    { name = "pgvector", specifier = ">=0.4.1" },
     { name = "psycopg2-binary", specifier = ">=2.9.10" },
     { name = "pydantic-settings", specifier = ">=2.13.1" },
     { name = "pymupdf", specifier = ">=1.26.3" },

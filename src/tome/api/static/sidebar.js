@@ -274,7 +274,6 @@
                 // Stats grid
                 '<div class="grid grid-cols-2 gap-2.5">' +
                     statCard('Passages', detail.passages.total_passages) +
-                    statCard('Embedded', detail.passages.embedded_passages) +
                     statCard('Pages', pageRange) +
                     statCard('Entities', detail.entities.entity_count) +
                     statCard('Years referenced', detail.years.year_count) +

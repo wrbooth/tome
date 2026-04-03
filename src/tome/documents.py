@@ -26,8 +26,7 @@ logger = logging.getLogger(__name__)
 def get_system_stats(conn) -> dict[str, Any]:
     """Get overall system statistics.
 
-    Returns a dict with keys: documents, passages, embedded_passages,
-    entities, years, and embedding_coverage (formatted string).
+    Returns a dict with keys: documents, passages, entities, and years.
     """
     with conn.cursor() as cur:
         cur.execute("SELECT COUNT(*) FROM documents")
@@ -35,9 +34,6 @@ def get_system_stats(conn) -> dict[str, Any]:
 
         cur.execute("SELECT COUNT(*) FROM passages")
         passage_count = cur.fetchone()[0]
-
-        cur.execute("SELECT COUNT(*) FROM passages WHERE embedding IS NOT NULL")
-        embedded_count = cur.fetchone()[0]
 
         cur.execute("SELECT COUNT(*) FROM passage_entities")
         entity_count = cur.fetchone()[0]
@@ -48,12 +44,8 @@ def get_system_stats(conn) -> dict[str, Any]:
     return {
         "documents": doc_count,
         "passages": passage_count,
-        "embedded_passages": embedded_count,
         "entities": entity_count,
         "years": year_count,
-        "embedding_coverage": f"{(embedded_count / passage_count * 100):.1f}%"
-        if passage_count > 0
-        else "0%",
     }
 
 
@@ -77,9 +69,7 @@ def get_document_stats(conn, document_id: str) -> dict[str, Any]:
         # Passage count
         cur.execute(
             """
-            SELECT COUNT(*) as total_passages,
-                   COUNT(CASE WHEN embedding IS NOT NULL
-                         THEN 1 END) as embedded_passages
+            SELECT COUNT(*) as total_passages
             FROM passages
             WHERE document_id = %s
         """,
@@ -141,7 +131,6 @@ def list_documents(conn) -> list[dict[str, Any]]:
                 d.authors,
                 d.pub_year,
                 COUNT(p.id) as passage_count,
-                COUNT(CASE WHEN p.embedding IS NOT NULL THEN 1 END) as embedded_count,
                 MIN(p.page) as min_page,
                 MAX(p.page) as max_page
             FROM documents d
@@ -289,11 +278,6 @@ def list(format: str):  # noqa: A001, A002
                 table_data = []
                 for doc in documents:
                     authors = ", ".join(doc["authors"]) if doc["authors"] else "Unknown"
-                    embedding_pct = (
-                        f"{(doc['embedded_count'] / doc['passage_count'] * 100):.1f}%"
-                        if doc["passage_count"] > 0
-                        else "0%"
-                    )
                     page_range = (
                         f"{doc['min_page']}-{doc['max_page']}"
                         if doc["min_page"] and doc["max_page"]
@@ -308,7 +292,6 @@ def list(format: str):  # noqa: A001, A002
                             authors[:30] + ("..." if len(authors) > 30 else ""),
                             doc["pub_year"] or "Unknown",
                             doc["passage_count"],
-                            f"{doc['embedded_count']} ({embedding_pct})",
                             page_range,
                         ]
                     )
@@ -319,7 +302,6 @@ def list(format: str):  # noqa: A001, A002
                     "Authors",
                     "Year",
                     "Passages",
-                    "Embedded",
                     "Pages",
                 ]
                 click.echo(tabulate(table_data, headers=headers, tablefmt="grid"))
@@ -366,18 +348,10 @@ def info(document_id: str, format: str):  # noqa: A002
                 click.echo()
 
                 click.echo("Statistics:")
-                total = passages["total_passages"]
-                embedded = passages["embedded_passages"]
-                click.echo(f"  Passages: {total} total, {embedded} embedded")
+                click.echo(f"  Passages: {passages['total_passages']}")
                 click.echo(f"  Entities: {entities['entity_count']}")
                 click.echo(f"  Years: {years['year_count']}")
                 click.echo(f"  Pages: {pages['min_page']} - {pages['max_page']}")
-
-                if passages["total_passages"] > 0:
-                    embedding_pct = (
-                        passages["embedded_passages"] / passages["total_passages"]
-                    ) * 100
-                    click.echo(f"  Embedding coverage: {embedding_pct:.1f}%")
 
     except Exception as e:
         logger.error("Error getting document info: %s", e)
@@ -430,12 +404,8 @@ def stats():
             click.echo("System Statistics:")
             click.echo(f"  Documents: {s['documents']}")
             click.echo(f"  Passages: {s['passages']}")
-            click.echo(f"  Embedded passages: {s['embedded_passages']}")
             click.echo(f"  Entities: {s['entities']}")
             click.echo(f"  Years: {s['years']}")
-
-            if s["passages"] > 0:
-                click.echo(f"  Embedding coverage: {s['embedding_coverage']}")
 
     except Exception as e:
         logger.error("Error getting system stats: %s", e)

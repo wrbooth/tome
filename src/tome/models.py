@@ -103,7 +103,6 @@ class DocumentListItem(BaseModel):
     authors: list[str] | None = Field(default=None)
     pub_year: int | None = Field(default=None)
     passage_count: int = 0
-    embedded_count: int = 0
     min_page: int | None = None
     max_page: int | None = None
 
@@ -124,7 +123,6 @@ class QueryAnalysisInfo(BaseModel):
 
 class DocumentPassageStats(BaseModel):
     total_passages: int = 0
-    embedded_passages: int = 0
 
 
 class DocumentEntityStats(BaseModel):
